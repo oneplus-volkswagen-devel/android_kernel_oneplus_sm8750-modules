@@ -214,6 +214,7 @@ struct oplus_panel {
 	u32 wait_te_config;
 	bool change_voltage_before_panel_bl_0;
 	bool interval_time_nolp_pre;
+	bool interval_time_fps_to_esd_flag;
 
 	/* ---------------- feature variate ---------------- */
 	bool dp_support;
@@ -272,6 +273,7 @@ struct oplus_panel {
 	struct mutex oplus_ffc_lock;
 	ktime_t te_timestamp;
 	ktime_t ts_timestamp;
+	ktime_t switch_fps_to_esd_timestamp;
 
 	struct oplus_pwm_turbo_params pwm_params;
 	u32 last_us_per_frame;

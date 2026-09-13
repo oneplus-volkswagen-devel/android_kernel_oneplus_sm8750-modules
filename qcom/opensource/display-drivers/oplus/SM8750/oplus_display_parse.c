@@ -365,6 +365,11 @@ int oplus_panel_parse_features_config(struct dsi_panel *panel)
 	OPLUS_DSI_INFO("oplus,video-mode-fps-switch-compenstate-enable: %s\n",
 		panel->oplus_panel.vid_fps_switch_compenstate_enable ? "true" : "false");
 
+	panel->oplus_panel.interval_time_fps_to_esd_flag = utils->read_bool(utils->data,
+			"oplus,interval-time-switch-fps-to-esd");
+	OPLUS_DSI_INFO("oplus,interval-time-switch-fps-to-esd: %s\n",
+			panel->oplus_panel.interval_time_fps_to_esd_flag ? "true" : "false");
+
 	return 0;
 }
 
