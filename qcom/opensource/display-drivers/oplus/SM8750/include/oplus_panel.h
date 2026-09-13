@@ -314,6 +314,11 @@ struct oplus_panel {
 	int ignore_mode_count;
 	u32 *ignore_mode;
 	struct oplus_dynamic_float_te_params dfte_params;
+	bool doze_disable_esdcheck;
+	/* add for aod mode cmd switch */
+	bool ramless_aod_mode_cmd_switch_support;
+	/* add for disable aod recovery*/
+	bool disalbe_aod_recovery;
 };
 
 #endif /* _OPLUS_PANEL_H_ */
