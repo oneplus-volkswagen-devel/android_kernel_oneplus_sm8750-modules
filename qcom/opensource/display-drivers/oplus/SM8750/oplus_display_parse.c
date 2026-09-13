@@ -370,6 +370,11 @@ int oplus_panel_parse_features_config(struct dsi_panel *panel)
 	OPLUS_DSI_INFO("oplus,interval-time-switch-fps-to-esd: %s\n",
 			panel->oplus_panel.interval_time_fps_to_esd_flag ? "true" : "false");
 
+	panel->oplus_panel.ofp_configuration_enable_for_ili7838e = utils->read_bool(utils->data,
+		"oplus,ofp_configuration_enable_for_ili7838e");
+	OPLUS_DSI_INFO("oplus,ofp_configuration_enable_for_ili7838e: %s\n",
+		panel->oplus_panel.ofp_configuration_enable_for_ili7838e ? "true" : "false");
+
 	panel->oplus_panel.doze_disable_esdcheck = utils->read_bool(utils->data,
 		"oplus,doze_disable_esdcheck");
 	OPLUS_DSI_INFO("oplus,doze_disable_esdcheck: %s\n",

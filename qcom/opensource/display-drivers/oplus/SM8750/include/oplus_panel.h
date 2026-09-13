@@ -107,6 +107,7 @@ struct oplus_backlight_config {
 	make sure demura cmd and bl cmd set by one frame */
 	bool oplus_bl_demura_set_by_one_frame;
 	bool need_set_demura;
+	bool video_mode_aod_close_backlight_sync;
 };
 
 /*
@@ -314,6 +315,8 @@ struct oplus_panel {
 	int ignore_mode_count;
 	u32 *ignore_mode;
 	struct oplus_dynamic_float_te_params dfte_params;
+	/* add a common configuration item for ili7838E */
+	bool ofp_configuration_enable_for_ili7838e;
 	bool doze_disable_esdcheck;
 	/* add for aod mode cmd switch */
 	bool ramless_aod_mode_cmd_switch_support;
