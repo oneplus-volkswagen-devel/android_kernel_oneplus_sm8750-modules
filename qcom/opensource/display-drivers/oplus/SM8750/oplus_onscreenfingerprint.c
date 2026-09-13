@@ -323,6 +323,9 @@ int oplus_ofp_init(void *dsi_panel)
 		OFP_INFO("aod_off_frame_cost:%d\n", panel->oplus_panel.aod_off_frame_cost);
 	}
 
+	p_oplus_ofp_params->ilitek_write_cmd_before_refresh_rate30hz = utils->read_bool(utils->data, "oplus,ofp-ilitek-write-cmd-before-refresh-rate30hz");
+	OFP_INFO("ilitek_write_cmd_before_refresh_rate30hz:%d\n", p_oplus_ofp_params->ilitek_write_cmd_before_refresh_rate30hz);
+
 	/* parse video mode aod brightness config */
 	rc = oplus_panel_parse_video_mode_aod_brightness_config(panel);
 	if (rc) {
@@ -673,6 +676,15 @@ int oplus_ofp_property_update(void *sde_connector, void *sde_connector_state, in
 	switch (prop_id) {
 	case CONNECTOR_PROP_HBM_ENABLE:
 		if (prop_val != p_oplus_ofp_params->hbm_enable) {
+			if ((oplus_ofp_local_hbm_is_enabled() && !oplus_ofp_ultrasonic_is_enabled())
+					&& (p_oplus_ofp_params->hbm_enable & (OPLUS_OFP_PROPERTY_DIM_LAYER | OPLUS_OFP_PROPERTY_FINGERPRESS_LAYER))
+					&& !(prop_val & (OPLUS_OFP_PROPERTY_DIM_LAYER | OPLUS_OFP_PROPERTY_FINGERPRESS_LAYER))
+					&& p_oplus_ofp_params->fp_press) {
+				p_oplus_ofp_params->fp_press = false;
+				OFP_INFO("oplus_ofp_fp_press:%d (fod bits dropped)\n", p_oplus_ofp_params->fp_press);
+				OPLUS_OFP_TRACE_INT("oplus_ofp_fp_press", p_oplus_ofp_params->fp_press);
+			}
+
 			OFP_INFO("HBM_ENABLE:%llu,dim:%llu,fingerpress:%llu,icon:%llu,aod:%llu\n", prop_val, (prop_val & OPLUS_OFP_PROPERTY_DIM_LAYER),
 				(prop_val & OPLUS_OFP_PROPERTY_FINGERPRESS_LAYER), (prop_val & OPLUS_OFP_PROPERTY_ICON_LAYER),
 					(prop_val & OPLUS_OFP_PROPERTY_AOD_LAYER));
@@ -2091,7 +2103,7 @@ int oplus_ofp_hbm_handle(void *sde_encoder_virt)
 	OFP_DEBUG("start\n");
 
 	if (oplus_ofp_oled_capacitive_is_enabled() || oplus_ofp_ultrasonic_is_enabled()
-			|| (oplus_ofp_local_hbm_is_enabled() && oplus_ofp_local_hbm_unlocking_acceleration_is_enabled())) {
+			|| oplus_ofp_local_hbm_is_enabled()) {
 		OFP_DEBUG("no need to handle hbm\n");
 		return 0;
 	}
@@ -2131,10 +2143,11 @@ int oplus_ofp_hbm_handle(void *sde_encoder_virt)
 	refresh_rate = display->panel->cur_mode->timing.refresh_rate;
 	OFP_DEBUG("hbm_enable:%llu, bl_level=%u refresh_rate=%u\n", hbm_enable, bl_level, refresh_rate);
 
-	if ((!p_oplus_ofp_params->doze_active && (hbm_enable & OPLUS_OFP_PROPERTY_DIM_LAYER
+	if (p_oplus_ofp_params->fp_press
+			&& ((!p_oplus_ofp_params->doze_active && (hbm_enable & OPLUS_OFP_PROPERTY_DIM_LAYER
 			|| hbm_enable & OPLUS_OFP_PROPERTY_FINGERPRESS_LAYER) && bl_level)
 				|| (p_oplus_ofp_params->doze_active && (hbm_enable & OPLUS_OFP_PROPERTY_FINGERPRESS_LAYER)
-					&& bl_level && !(oplus_ofp_video_mode_30hz_aod_is_enabled() && (refresh_rate == 30)))) {
+					&& bl_level && !(oplus_ofp_video_mode_30hz_aod_is_enabled() && (refresh_rate == 30))))) {
 		if (oplus_ofp_video_mode_30hz_aod_is_enabled() || p_oplus_ofp_params->oplus_ofp_ramless_set_lhbm_after_120hz) {
 			if (refresh_rate == 120) {
 				rc = oplus_ofp_set_panel_hbm(c_conn, true);
@@ -2148,9 +2161,7 @@ int oplus_ofp_hbm_handle(void *sde_encoder_virt)
 				OFP_ERR("failed to set panel hbm on\n");
 			}
 		}
-	} else if ((!(hbm_enable & OPLUS_OFP_PROPERTY_DIM_LAYER)
-					&& !(hbm_enable & OPLUS_OFP_PROPERTY_FINGERPRESS_LAYER))
-						|| !p_oplus_ofp_params->fp_press || !bl_level) {
+	} else {
 		rc = oplus_ofp_set_panel_hbm(c_conn, false);
 		if (rc) {
 			OFP_ERR("failed to set panel hbm off\n");
@@ -2217,7 +2228,7 @@ int oplus_ofp_lhbm_handle(void *dsi_display)
 
 	OFP_DEBUG("start\n");
 
-	if (!(oplus_ofp_local_hbm_is_enabled() && oplus_ofp_local_hbm_unlocking_acceleration_is_enabled())) {
+	if (!oplus_ofp_local_hbm_is_enabled()) {
 		OFP_DEBUG("no need to handle lhbm\n");
 		return 0;
 	}
@@ -2490,7 +2501,7 @@ enum hrtimer_restart oplus_ofp_notify_uiready_timer_handler(struct hrtimer *time
 
 	OPLUS_OFP_TRACE_BEGIN("oplus_ofp_notify_uiready_timer_handler");
 
-	if (oplus_ofp_local_hbm_is_enabled() && oplus_ofp_local_hbm_unlocking_acceleration_is_enabled()) {
+	if (oplus_ofp_local_hbm_is_enabled()) {
 		if (!display) {
 			OFP_ERR("Invalid display param\n");
 			return HRTIMER_NORESTART;
@@ -2633,7 +2644,7 @@ int oplus_ofp_notify_uiready(void *sde_encoder_phys)
 
 	hbm_enable = sde_connector_get_property(c_conn->base.state, CONNECTOR_PROP_HBM_ENABLE);
 
-	if (oplus_ofp_local_hbm_is_enabled() && oplus_ofp_local_hbm_unlocking_acceleration_is_enabled()) {
+	if (oplus_ofp_local_hbm_is_enabled()) {
 		if (p_oplus_ofp_params->panel_hbm_status) {
 			/* ddic pressed icon scanning has started */
 			p_oplus_ofp_params->notifier_chain_value = OPLUS_OFP_UI_READY;
@@ -3328,7 +3339,17 @@ int oplus_ofp_aod_off_handle(void *dsi_display)
 			|| !display->panel->panel_initialized) {
 		OFP_INFO("Dont set backlight when panel already power off");
 	} else {
-		dsi_panel_set_backlight(display->panel, display->panel->bl_config.bl_level);
+		if (oplus_ofp_video_mode_30hz_aod_is_enabled()) {
+			rc = oplus_ofp_panel_cmd_set_nolock(display->panel, DSI_CMD_DEFAULT_SWITCH_PAGE);
+			if (rc) {
+				OFP_ERR("[%s] failed to send DSI_CMD_DEFAULT_SWITCH_PAGE, rc=%d\n", display->name, rc);
+			}
+			display->panel->oplus_panel.aod_backlight_async = true;
+			dsi_panel_set_backlight(display->panel, display->panel->bl_config.bl_level);
+			display->panel->oplus_panel.aod_backlight_async = false;
+		} else {
+			dsi_panel_set_backlight(display->panel, display->panel->bl_config.bl_level);
+		}
 	}
 	mutex_unlock(&display->panel->panel_lock);
 
@@ -3427,7 +3448,14 @@ int oplus_ofp_power_mode_handle(void *dsi_display, int power_mode)
 							OFP_ERR("[%s] failed to send DSI_CMD_HBM_OFF cmds, rc=%d\n", display->name, rc);
 						}
 					}
+					oplus_ofp_set_hbm_state(false);
 				}
+			}
+
+			if (p_oplus_ofp_params->fp_press) {
+				p_oplus_ofp_params->fp_press = false;
+				OFP_INFO("oplus_ofp_fp_press:%d\n", p_oplus_ofp_params->fp_press);
+				OPLUS_OFP_TRACE_INT("oplus_ofp_fp_press", p_oplus_ofp_params->fp_press);
 			}
 
 			/* reset aod unlocking flag when fingerprint unlocking failed */
@@ -3508,6 +3536,11 @@ int oplus_ofp_power_mode_handle(void *dsi_display, int power_mode)
 			if (rc) {
 				OFP_ERR("[%s] failed to handle aod off, rc=%d\n", display->name, rc);
 			}
+		}
+		if (p_oplus_ofp_params->fp_press) {
+			p_oplus_ofp_params->fp_press = false;
+			OFP_INFO("oplus_ofp_fp_press:%d\n", p_oplus_ofp_params->fp_press);
+			OPLUS_OFP_TRACE_INT("oplus_ofp_fp_press", p_oplus_ofp_params->fp_press);
 		}
 		break;
 
@@ -3768,13 +3801,17 @@ int oplus_ofp_video_mode_aod_handle(void *sde_encoder_virt)
 		return -EFAULT;
 	}
 
+	if (!p_oplus_ofp_params->doze_active) {
+		return 0;
+	}
+
 	OPLUS_OFP_TRACE_BEGIN("oplus_ofp_video_mode_aod_handle");
 
 	refresh_rate = display->panel->cur_mode->timing.refresh_rate;
 
 	/* due to aod sequence requirements, the aod of video mode is bound to 30hz timing */
-	if (!oplus_ofp_get_aod_state() && (refresh_rate == 30)
-			&& (oplus_ofp_refresh_flag == OPLUS_OFP_VIDEO_AOD_STATE_READY_END)) {
+	if ((!oplus_ofp_get_aod_state() && (refresh_rate == 30) && (oplus_ofp_refresh_flag == OPLUS_OFP_VIDEO_AOD_STATE_READY_END))
+			|| (!oplus_ofp_get_aod_state() && (refresh_rate == 30) && p_oplus_ofp_params->ilitek_write_cmd_before_refresh_rate30hz)) {
 		if (oplus_ofp_get_hbm_state()) {
 			if (oplus_ofp_local_hbm_is_enabled()) {
 				rc = oplus_ofp_display_cmd_set(display, DSI_CMD_LHBM_PRESSED_ICON_OFF);
@@ -3930,6 +3967,10 @@ int oplus_ofp_touchpanel_event_notifier_call(struct notifier_block *nb, unsigned
 
 			if (tp_event->touch_state == 1) {
 				OFP_INFO("tp touchdown\n");
+				if (oplus_ofp_local_hbm_is_enabled() && !oplus_ofp_ultrasonic_is_enabled()) {
+					if (oplus_ofp_notify_fp_press(&tp_event->touch_state))
+						OFP_INFO("failed to notify fp down event\n");
+				}
 				if (oplus_ofp_video_mode_30hz_aod_is_enabled() && oplus_ofp_get_aod_state()) {
 					event.type = DRM_EVENT_TP_TOUCHDOWN;
 					event.length = sizeof(bool);
@@ -3939,6 +3980,12 @@ int oplus_ofp_touchpanel_event_notifier_call(struct notifier_block *nb, unsigned
 				} else {
 					/* send aod off cmds in doze mode to speed up fingerprint unlocking */
 					oplus_ofp_aod_off_set();
+				}
+			} else if (tp_event->touch_state == 0) {
+				OFP_INFO("tp touchup\n");
+				if (oplus_ofp_local_hbm_is_enabled() && !oplus_ofp_ultrasonic_is_enabled()) {
+					if (oplus_ofp_notify_fp_press(&tp_event->touch_state))
+						OFP_INFO("failed to notify fp up event\n");
 				}
 			}
 		}
