@@ -101,6 +101,11 @@ static int oplus_panel_parse_common_config(struct dsi_panel *panel)
 		OPLUS_DSI_INFO("oplus,pcd-lvd-check-time-gap is not config, default 0\n");
 	}
 
+	panel->oplus_panel.all_timing_switch_frame_delay = utils->read_bool(utils->data,
+			"oplus,panel-all-timing-switch-frame-delay");
+	OPLUS_DSI_INFO("oplus,panel-all-timing-switch-frame-delay: %s\n",
+			panel->oplus_panel.all_timing_switch_frame_delay ? "true" : "false");
+
 	return 0;
 }
 
