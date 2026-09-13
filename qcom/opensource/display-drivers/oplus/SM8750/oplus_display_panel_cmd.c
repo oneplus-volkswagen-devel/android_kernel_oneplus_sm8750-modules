@@ -231,6 +231,7 @@ const char *cmd_set_prop_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-panel-init-command",
 	"qcom,mdss-dsi-optimize-on-command",
 	"qcom,mdss-dsi-optimize-vice-on-command",
+	"qcom,mdss-dsi-vid-165hz-switch-command",
 	"qcom,mdss-dsi-vid-144hz-switch-command",
 	"qcom,mdss-dsi-vid-120hz-switch-command",
 	"qcom,mdss-dsi-vid-90hz-switch-command",
@@ -510,6 +511,7 @@ const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-panel-init-command-state",
 	"qcom,mdss-dsi-optimize-on-command-state",
 	"qcom,mdss-dsi-optimize-vice-on-command-state",
+	"qcom,mdss-dsi-vid-165hz-switch-command-state",
 	"qcom,mdss-dsi-vid-144hz-switch-command-state",
 	"qcom,mdss-dsi-vid-120hz-switch-command-state",
 	"qcom,mdss-dsi-vid-90hz-switch-command-state",
@@ -1151,6 +1153,7 @@ int oplus_panel_vid_cmdp_handle(void *dsi_panel, enum dsi_cmd_set_type type)
 	struct dsi_panel *panel = dsi_panel;
 	struct dsi_display_mode *mode;
 	struct dsi_cmd_desc *cmds;
+	struct task_struct *task = current;
 	int i = 0;
 	u32 count;
 
@@ -1164,6 +1167,9 @@ int oplus_panel_vid_cmdp_handle(void *dsi_panel, enum dsi_cmd_set_type type)
 	if((panel->panel_mode != DSI_OP_VIDEO_MODE) || (!panel->oplus_panel.enable_dsi_cmd_package)) {
 		return 0;
 	}
+	if (strncmp(task->comm, "crtc_commit", 11) != 0) {
+		return 0;
+	}
 	mode = panel->cur_mode;
 	cmds = mode->priv_info->cmd_sets[type].cmds;
 	count = mode->priv_info->cmd_sets[type].count;
@@ -1172,6 +1178,7 @@ int oplus_panel_vid_cmdp_handle(void *dsi_panel, enum dsi_cmd_set_type type)
 	switch (type) {
 	case DSI_CMD_SET_ON:
 	case DSI_CMD_SET_OFF:
+	case DSI_CMD_SET_LP1:
 	case DSI_CMD_ESD_SWITCH_PAGE:
 	case DSI_CMD_DEFAULT_SWITCH_PAGE:
 	case DSI_CMD_SET_PPS:
@@ -1185,6 +1192,8 @@ int oplus_panel_vid_cmdp_handle(void *dsi_panel, enum dsi_cmd_set_type type)
 	case DSI_CMD_FPS_ENTER_165HZ:
 	case DSI_CMD_FPS_144HZ_ENTER_165HZ:
 	case DSI_CMD_FPS_ENTER_144HZ:
+		dsi_cmd_set_type_status = 0;
+		panel->oplus_panel.dsi_cmd_need_to_package = false;
 		break;
 	default:
 		if (count > 0) {

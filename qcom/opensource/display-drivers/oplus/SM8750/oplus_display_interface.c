@@ -184,9 +184,9 @@ void oplus_bridge_pre_enable(struct dsi_display *display, struct dsi_display_mod
 	return;
 }
 
-void oplus_bridge_post_enable(struct dsi_display *display, struct dsi_display_mode *mode)
+void oplus_bridge_post_enable(struct dsi_display *display, struct dsi_display_mode *mode, bool flag)
 {
-	oplus_panel_switch_vid_mode_post(display, mode);
+	oplus_panel_switch_vid_mode_post(display, mode, flag);
 
 	return;
 }
