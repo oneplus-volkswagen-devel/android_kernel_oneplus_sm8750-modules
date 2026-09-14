@@ -312,16 +312,16 @@ static const char * const wls_err_scene_text[] = {
 };
 
 enum oplus_chg_temp_region {
-	BATT_TEMP_COLD = 0,	/*< -10*/
-	BATT_TEMP_LITTLE_COLD,	/*-10-0*/
-	BATT_TEMP_COOL,		/*0-5*/
-	BATT_TEMP_LITTLE_COOL,	/*5-12*/
-	BATT_TEMP_PRE_NORMAL,	/*12-16*/
-	BATT_TEMP_NORMAL,	/*16-21*/
-	BATT_TEMP_NORMAL_HIGH,	/*21-37.5*/
-	BATT_TEMP_LITTLE_WARM,	/*37.5-44*/
-	BATT_TEMP_WARM,		/*44-53*/
-	BATT_TEMP_HOT,		/*>53*/
+	BATT_TEMP_COLD = 0,		/*< -10*/
+	BATT_TEMP_LITTLE_COLD,		/*-10-0*/
+	BATT_TEMP_COOL,			/*0-5*/
+	BATT_TEMP_LITTLE_COOL,		/*5-12*/
+	BATT_TEMP_PRE_NORMAL,		/*12-16*/
+	BATT_TEMP_NORMAL,		/*16-21*/
+	BATT_TEMP_NORMAL_HIGH,		/*21-37.5*/
+	BATT_TEMP_LITTLE_WARM,		/*37.5-44*/
+	BATT_TEMP_WARM,			/*44-53*/
+	BATT_TEMP_HOT,			/*>53*/
 	BATT_TEMP_MAX,
 };
 
@@ -528,6 +528,7 @@ enum wls_topic_item {
 	WLS_ITEM_PRODUCT_ID,
 	WLS_ITEM_TRACK_RECORD_FASTCHG,
 	WLS_ITEM_TRACK_BREAK_MANU,
+	WLS_ITEM_PING_TIME,
 };
 
 enum {
@@ -541,6 +542,12 @@ enum {
 	FORCE_UPGRADE_NONE,
 	FORCE_UPGRADE_RX,
 	FORCE_UPGRADE_TX,
+};
+
+enum oplus_bt_type {
+	BT_UNKNOWN_TYPE = 0,
+	BT_CAR,
+	BT_MAG_HANDLE,
 };
 
 #ifdef OPLUS_CHG_DEBUG

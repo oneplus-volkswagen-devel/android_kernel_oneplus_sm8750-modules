@@ -143,7 +143,6 @@ static int syna_get_irq_reason(void *priv, enum irq_reason *reason)
 			&tcm_hcd->event_data);
 	if (retval < 0) {
 		hbp_err("Fail to get event data\n");
-		hbp_dev_ctrl_hw_reset();
 		return -1;
 	}
 
@@ -552,7 +551,6 @@ static int syna_dev_probe(struct platform_device *pdev)
 			break;
 		}
 		hbp_err("Detect device fail, retry = %d.\n", retry);
-		hbp_dev_ctrl_hw_reset();
 	}
 
 	tcm_hcd->probe_done = true;

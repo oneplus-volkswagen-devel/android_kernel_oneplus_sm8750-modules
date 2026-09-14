@@ -236,3 +236,26 @@ void hbp_power_ctrl(struct hbp_device *hbp_dev, struct power_sequeue sq[])
 	}
 }
 
+void hbp_power_type_ctrl(struct hbp_device *hbp_dev, enum power_type type, bool en)
+{
+	if (!hbp_dev)
+		return;
+
+	switch (type) {
+	case POWER_AVDD:
+		hbp_power_ctrl_avdd(hbp_dev, en);
+		break;
+	case POWER_VDDI:
+		hbp_power_ctrl_vddi(hbp_dev, en);
+		break;
+	case POWER_RESET:
+		hbp_power_ctrl_reset(hbp_dev, en);
+		break;
+	case POWER_BUS:
+		hbp_power_ctrl_bus(hbp_dev, en);
+		break;
+	default:
+		break;
+	}
+}
+

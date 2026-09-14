@@ -77,8 +77,9 @@ TRACE_EVENT(hbp,
 
 #endif  /*__HBP_TRACE_H__*/
 
-#undef TRACE_INCLUDE_PATH
+#ifndef TRACE_INCLUDE_PATH
 #define TRACE_INCLUDE_PATH .
+#endif
 
 #undef TRACE_INCLUDE_FILE
 #define TRACE_INCLUDE_FILE hbp_trace

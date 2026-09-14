@@ -16,6 +16,8 @@
 #endif
 
 #include "nvt_drivers_nt36532_noflash.h"
+#include "../../touchpanel_healthinfo/touchpanel_exception.h"
+#include "../../touchpanel_common.h"
 
 /*******Part0:LOG TAG Declear********************/
 
@@ -1862,7 +1864,7 @@ static int32_t nvt_nf_detect_chip(struct chip_data_nt36523 *chip_info)
 }
 
 
-/********* Start of implementation of oppo_touchpanel_operations callbacks********************/
+/********* Start of implementation of oplus_touchpanel_operations callbacks********************/
 /*extern int tp_util_get_vendor(struct hw_resource *hw_res, struct panel_info *panel_data);*/
 
 static int nvt_ftm_process(void *chip_data)
@@ -1975,6 +1977,10 @@ static unsigned int nvt_trigger_reason(void *chip_data, int gesture_enable, int 
 	/*some kind of protect mechanism, after WDT firware redownload and try to save tp*/
 	ret = nvt_wdt_fw_recovery(chip_info, chip_info->point_data);
 	if (ret) {
+		tp_healthinfo_report(chip_info->monitor_data, HEALTH_REPORT, HEALTH_REPORT_FW_FD);
+		if (chip_info->ts->exception_upload_support) {
+			tp_exception_report(&chip_info->ts->exception_data, EXCEP_FW_FD, "firmware_fd", sizeof("firmware_fd"));
+		}
 		if ((gesture_enable == 1) && (is_suspended == 1)) {
 			/* auto go back to wakeup gesture mode */
 			TPD_INFO("Recover for fw reset %02X\n", chip_info->point_data[1]);
@@ -2262,6 +2268,15 @@ static int nvt_get_touch_points_high_reso(void *chip_data, struct point_info *po
 			points[pointid].status = 1;
 		} else if ((point_data[position] & 0x07) == STATUS_FINGER_HOLD) {
 			is_finger_hold = true;
+		}
+
+		/* edge reject info */
+		if (chip_info->ts && chip_info->ts->kernel_grip_support) {
+			position = 257 + 4 * i;
+			points[pointid].tx_press = point_data[position];
+			points[pointid].rx_press = point_data[position + 1];
+			points[pointid].tx_er = point_data[position + 2];
+			points[pointid].rx_er = point_data[position + 3];
 		}
 	}
 	/*no valid point and finger hold state, we should report cancel */
@@ -3305,6 +3320,18 @@ static int nvt_enable_pen_mode(struct chip_data_nt36523 *chip_info, bool enable)
 	return ret;
 }
 
+static int nvt_set_package_type(void *chip_data, int value)
+{
+	int8_t ret = -1;
+	struct chip_data_nt36523 *chip_info = (struct chip_data_nt36523 *)chip_data;
+
+	TPD_DEBUG("%s:value = %d, chip_info->is_sleep_writed = %d\n", __func__,
+			value, chip_info->is_sleep_writed);
+	ret = nvt_extend_cmd2_store(chip_info, EVENTBUFFER_EXT_CMD, EVENTBUFFER_EXT_SET_PACKAGE_TYPE, value);
+
+	return ret;
+}
+
 static int nvt_notify_keyboard_open(void *chip_data)
 {
 	int8_t ret = -1;
@@ -3328,6 +3355,19 @@ static int nvt_set_pen_jitter_para(void *chip_data, int level)
 
 	return ret;
 }
+
+static int nvt_set_leave_jitter(void *chip_data, int level)
+{
+	int8_t ret = -1;
+	struct chip_data_nt36523 *chip_info = (struct chip_data_nt36523 *)chip_data;
+	TPD_DEBUG("%s:level = %d, chip_info->is_sleep_writed = %d\n", __func__,
+			level, chip_info->is_sleep_writed);
+
+	ret = nvt_extend_cmd2_store(chip_info, EVENTBUFFER_EXT_CMD, EVENTBUFFER_EXT_TOUCH_LEAVE_JITTER, level);
+
+	return ret;
+}
+
 static int8_t nvt_extend_cmd_store_direct(struct chip_data_nt36523 *chip_info,
 				   uint8_t u8Cmd, uint8_t u8SubCmd)
 {
@@ -5761,6 +5801,22 @@ static void nvt_aiunit_game_info(void *chip_data)
 	}
 }
 
+static void nvt_inject_wdt_reset(void *chip_data, int value)
+{
+	int8_t ret = -1;
+	struct chip_data_nt36523 *chip_info = (struct chip_data_nt36523 *)chip_data;
+
+	TPD_INFO("%s: %s inject watchdog reset.\n", __func__, value ? "Enter" : "Exit");
+
+	if (value) {
+		ret = nvt_cmd_store(chip_info, EVENTBUFFER_INJECT_WDT_RESET);
+		if (ret) {
+			TPD_INFO("%s: write EVENTBUFFER_INJECT_WDT_RESET reg fail\n", __func__);
+		}
+	}
+	return;
+}
+
 static struct oplus_touchpanel_operations nvt_ops = {
 	.ftm_process				= nvt_ftm_process,
 	.reset					  = nvt_reset,
@@ -5783,8 +5839,11 @@ static struct oplus_touchpanel_operations nvt_ops = {
 	.notify_pencil_type         = nvt_notify_pencil_type,
 	.notify_keyboard_open     = nvt_notify_keyboard_open,
 	.pen_sensitive_lv_set     = nvt_set_pen_jitter_para,
+	.set_package_type         = nvt_set_package_type,
 	.ftm_process_extra		  = NULL,
 	.aiunit_game_info         = nvt_aiunit_game_info,
+	.touch_leave_jitter_set   = nvt_set_leave_jitter,
+	.inject_wdt_reset         = nvt_inject_wdt_reset,
 };
 
 static void nvt_data_read(struct seq_file *s,

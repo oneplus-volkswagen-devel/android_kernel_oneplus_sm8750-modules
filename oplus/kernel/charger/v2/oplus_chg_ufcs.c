@@ -55,6 +55,7 @@
 #define UFCS_ADSP_TEMP_SWITCH_DELAY	600
 #define UFCS_PRELIMINARY_IMP_TIME_MS	200
 #define UFCS_RESTART_TIMEOUT_MS	10000
+#define UFCS_RESET_MS			5000
 #define UFCS_START_DEF_CURR_MA_OPLUS	800
 #define UFCS_START_DEF_CURR_MA_THIRD	1000
 
@@ -150,7 +151,7 @@ enum {
 };
 
 enum ufcs_emark_power {
-	UFCS_EMARK_POWER_DEFAULT = 3000,
+	UFCS_EMARK_POWER_DEFAULT = 4000,
 	UFCS_EMARK_POWER_THIRD = 5000,
 	UFCS_EMARK_POWER_V0 = 6500,
 	UFCS_EMARK_POWER_V1 = 10000,
@@ -239,6 +240,7 @@ struct oplus_ufcs_config {
 	int curr_max_ma_percent_75;
 	int curr_max_ma_percent_85;
 	int ufcs_watt_third;
+	int ufcs_full_recheck_temp;
 };
 
 struct oplus_ufcs_timer {
@@ -252,6 +254,7 @@ struct oplus_ufcs_timer {
 
 struct ufcs_protection_counts {
 	int cool_fw;
+	int warm_fw;
 	int sw_full;
 	int hw_full;
 	int low_curr_full;
@@ -262,6 +265,7 @@ struct ufcs_protection_counts {
 	int tfg_over;
 	int output_low;
 	int ibus_over;
+	int cool_full_fw;
 };
 
 struct oplus_ufcs_limits {
@@ -362,6 +366,94 @@ struct ufcs_bcc_info {
 	int bcc_exit_curr;
 };
 
+#define UFCS_PR_START_CURR_MA		1000
+#define UFCS_PR_START_DELAY_MS		200
+enum ufcs_pr_state {
+	UFCS_PR_IDLE,
+	UFCS_PR_RISING,
+	UFCS_PR_FALLING,
+	UFCS_PR_CC,
+	UFCS_PR_CV,
+	UFCS_PR_FULL,
+	UFCS_PR_PDO_ERR,
+	UFCS_PR_MAX,
+};
+
+struct ufcs_pr_config {
+	bool support_pr;
+	int pr_r_input_mohm;
+	int pr_r_btb_mohm;
+};
+
+struct ufcs_pr_data {
+	enum ufcs_pr_state curr_state;
+	enum ufcs_pr_state prev_state;
+
+	struct puc_strategy_temp_curves curve;
+
+	bool adjust;
+	int adjust_rising_cnt;
+	int adjust_rising_adapter_vbus_mv;
+	int adjust_rising_req_vbus_mv;
+	unsigned long adjust_jiffies;
+
+	int emark_current_ma;
+	int adapter_current_ma;
+	int pdo_current_ma;
+	int curve_current_ma;
+	int plc_current_ma;
+	int falling_current_ma;
+	int err_current_ma;
+	int max_current_ma;
+
+	int request_voltage_mv;
+	int request_current_ma;
+
+	int target_current_ma;
+
+	int adapter_vbus_mv;
+	int adapter_ibus_ma;
+	int ibat_ma;
+	int vbat_mv;
+	int pmic_vbat_mv;
+	int iterm_ma;
+	int pmic_vbus_mv;
+
+	int vbat_full_mv;
+	int vbat_full_comp_mv;
+	int vbat_target_mv;
+	int vbat_target_mv_by_ibus;
+	int ibat_target_ma;
+	int bcc_target_ma;
+	unsigned long bcc_target_update_jiffies;
+	int ibus_target_ma;
+	int ibus_to_ibat_ratio;
+	int vbus_to_vbat_ratio;
+	int next_ibus_target_ma;
+
+	int falling_cc_adjust;
+
+	int vbus_max_mv;
+	int req_vbus_max_mv;
+
+	int cc_cnt;
+
+	bool cv_curve;
+	bool last_curve;
+	int cv_full_cnt;
+	int cv_iterm_cnt;
+	int cv_target_cnt;
+	int cv_delta_cnt;
+	int cv_ibus_cnt;
+	bool full;
+	unsigned long entry_cv_jiffies;
+	unsigned long cv_ibus_larget_jiffies;
+
+	bool pdo_err;
+	int pdo_err_high;
+	int pdo_err_low;
+};
+
 struct oplus_ufcs {
 	struct device *dev;
 	struct oplus_mms *ufcs_topic;
@@ -380,6 +472,7 @@ struct oplus_ufcs {
 	struct mms_subscribe *retention_subs;
 	struct oplus_mms *plc_topic;
 	struct mms_subscribe *plc_subs;
+	struct oplus_mms *keep_topic;
 	struct oplus_chg_ic_dev *ufcs_ic;
 	struct oplus_chg_ic_dev *cp_ic;
 	struct oplus_chg_ic_dev *dpdm_switch;
@@ -403,6 +496,7 @@ struct oplus_ufcs {
 	struct delayed_work ufcs_eis_work;
 	struct delayed_work send_authdata_to_adsp_work;
 	struct delayed_work switch_end_recheck_work;
+	struct delayed_work ufcs_subsys_reset_work;
 
 	struct work_struct wired_online_work;
 	struct work_struct force_exit_work;
@@ -433,6 +527,7 @@ struct oplus_ufcs {
 	struct oplus_chg_strategy *oplus_curve_strategy;
 	struct oplus_chg_strategy *third_curve_strategy;
 	struct oplus_chg_strategy *strategy;
+	struct oplus_chg_strategy *vfa_strategy;
 
 	struct oplus_chg_strategy **oplus_lcf_strategy;
 	struct oplus_chg_strategy **third_lcf_strategy;
@@ -525,10 +620,15 @@ struct oplus_ufcs {
 
 	int ufcs_fastchg_batt_temp_status;
 	int ufcs_temp_cur_range;
+	int ufcs_cool_full_temp_range;
 	int ufcs_low_curr_full_temp_status;
 	int batt_bal_curr_limit;
 	int preliminary_imp_check_cnt;
 	bool need_preliminary_imp_check;
+
+	bool led_on;
+	struct ufcs_pr_config pr_config;
+	struct ufcs_pr_data pr_data;
 
 	bool reset_adapter;
 	struct completion reset_abnormal_ack;
@@ -540,6 +640,7 @@ struct oplus_ufcs {
 	bool chg_ctrl_by_sale_mode;
 	int subboard_ntc_abnormal_current;
 	bool prot_crash;
+	bool subsys_reset_ufcs;
 	int eis_status;
 	bool lift_vbus_use_cpvout;
 	bool ufcs_dispatch_key_ok;
@@ -552,7 +653,14 @@ struct oplus_ufcs {
 	bool fcl_support;
 	bool ss_check;
 	bool fcl_trigger;
+	int third_curve_target_vbus_mv;
+	int third_curve_target_ibus_ma;
+	atomic_t cp_offline;
+	int last_chg_flashmode;
 };
+
+static void ufcs_pr_init(struct oplus_ufcs *chip);
+static void ufcs_pr_check_bcc_curr(struct oplus_ufcs *chip);
 
 struct current_level {
 	int level;
@@ -966,6 +1074,26 @@ static int oplus_ufcs_set_oplus_adapter(struct oplus_ufcs *chip, bool oplus_adap
 	rc = oplus_mms_publish_msg(chip->ufcs_topic, msg);
 	if (rc < 0) {
 		chg_err("publish oplus adapter msg error, rc=%d\n", rc);
+		kfree(msg);
+	}
+
+	return rc;
+}
+
+static int oplus_ufcs_publish_test_mode(struct oplus_ufcs *chip)
+{
+	struct mms_msg *msg;
+	int rc;
+
+	msg = oplus_mms_alloc_msg(MSG_TYPE_ITEM, MSG_PRIO_LOW,
+				  UFCS_ITEM_TEST_MODE);
+	if (msg == NULL) {
+		chg_err("alloc msg error\n");
+		return -ENOMEM;
+	}
+	rc = oplus_mms_publish_msg_sync(chip->ufcs_topic, msg);
+	if (rc < 0) {
+		chg_err("publish test_mode msg error, rc=%d\n", rc);
 		kfree(msg);
 	}
 
@@ -2005,6 +2133,62 @@ static void oplus_ufcs_charge_btb_allow_check(struct oplus_ufcs *chip)
 	}
 }
 
+static int oplus_ufcs_parse_vfa_strategy(struct oplus_ufcs *chip)
+{
+	struct device_node *vfa_node;
+
+	vfa_node = of_parse_phandle(oplus_get_node_by_type(chip->dev->of_node), "oplus,ufcs_vfa_strategy", 0);
+	if (!vfa_node) {
+		chg_info("ufcs_vfa_strategy not found, skip vfa strategy\n");
+		return 0;
+	}
+
+	chip->vfa_strategy = oplus_chg_strategy_alloc_by_node("vfa_strategy", vfa_node);
+	of_node_put(vfa_node);
+	if (IS_ERR_OR_NULL(chip->vfa_strategy)) {
+		chg_err("alloc ufcs vfa startegy error, rc=%ld", PTR_ERR(chip->vfa_strategy));
+		chip->vfa_strategy = NULL;
+		return -EFAULT;
+	}
+
+	return 0;
+}
+
+static void oplus_ufcs_vfa_reset(struct oplus_ufcs *chip)
+{
+	if (chip->vfa_strategy)
+		oplus_chg_strategy_set_process_data(chip->vfa_strategy, "reset", 0);
+	vote(chip->ufcs_not_allow_votable, VFA_VOTER, false, 0, false);
+}
+
+static void oplus_ufcs_vfa_allow(struct oplus_ufcs *chip, bool do_init)
+{
+	int rc;
+	int allow_fastchg = 1;
+
+	if (!chip->vfa_strategy)
+		goto done;
+
+	if (do_init) {
+		rc = oplus_chg_strategy_init(chip->vfa_strategy);
+		if (rc < 0) {
+			chg_err("vfa_strategy init fail, rc=%d\n", rc);
+			allow_fastchg = 1;
+			goto done;
+		}
+	}
+
+	rc = oplus_chg_strategy_get_data(chip->vfa_strategy, &allow_fastchg);
+	if (rc < 0) {
+		chg_err("vfa_strategy get fail, rc=%d\n", rc);
+		allow_fastchg = 1;
+		goto done;
+	}
+
+done:
+	vote(chip->ufcs_not_allow_votable, VFA_VOTER, !allow_fastchg, 1, false);
+}
+
 static bool oplus_ufcs_charge_allow_check(struct oplus_ufcs *chip)
 {
 	union mms_msg_data data = { 0 };
@@ -2056,12 +2240,15 @@ static bool oplus_ufcs_charge_allow_check(struct oplus_ufcs *chip)
 
 	oplus_ufcs_charge_btb_allow_check(chip);
 
+	oplus_ufcs_vfa_allow(chip, true);
+
 	return !chip->ufcs_not_allow;
 }
 
 static void oplus_ufcs_count_init(struct oplus_ufcs *chip)
 {
 	chip->count.cool_fw = 0;
+	chip->count.cool_full_fw = 0;
 	chip->count.sw_full = 0;
 	chip->count.hw_full = 0;
 	chip->count.low_curr_full = 0;
@@ -2088,6 +2275,9 @@ static void oplus_ufcs_votable_reset(struct oplus_ufcs *chip)
 	vote(chip->ufcs_disable_votable, IOUT_CURR_VOTER, false, 0, false);
 	vote(chip->ufcs_disable_votable, ADSP_CRASH_VOTER, false, 0, false);
 	vote(chip->ufcs_disable_votable, PLC_RETRY_VOTER, false, 0, false);
+	vote(chip->ufcs_disable_votable, PR_VOTER, false, 0, false);
+
+	vote(chip->ufcs_not_allow_votable, CHG_FULL_COOL_VOTER, false, 0, false);
 
 	vote(chip->ufcs_curr_votable, IMP_VOTER, false, 0, false);
 	vote(chip->ufcs_curr_votable, STEP_VOTER, false, 0, false);
@@ -2104,6 +2294,7 @@ static void oplus_ufcs_votable_reset(struct oplus_ufcs *chip)
 	vote(chip->ufcs_curr_votable, IC_VOTER, false, 0, false);
 	vote(chip->ufcs_curr_votable, BATT_SOC_VOTER, false, 0, false);
 	vote(chip->ufcs_curr_votable, LIMIT_FCL_VOTER, false, 0, false);
+	vote(chip->ufcs_curr_votable, PR_VOTER, false, 0, false);
 }
 
 static int oplus_ufcs_temp_cur_range_init(struct oplus_ufcs *chip)
@@ -2154,6 +2345,7 @@ static void oplus_ufcs_variables_early_init(struct oplus_ufcs *chip)
 	chip->ss_check = false;
 	chip->fcl_trigger = false;
 	oplus_ufcs_set_ufcs_vid(chip, 0);
+	chip->subsys_reset_ufcs = false;
 }
 
 static void oplus_ufcs_variables_init(struct oplus_ufcs *chip)
@@ -2222,6 +2414,7 @@ static void oplus_ufcs_force_exit(struct oplus_ufcs *chip)
 	if (is_disable_charger_vatable_available(chip))
 		vote(chip->chg_disable_votable, UFCS_VOTER, false, 0, false);
 	oplus_cpa_request_unlock(chip->cpa_topic, UFCS_VOTER);
+	oplus_ufcs_publish_test_mode(chip);
 }
 
 static void oplus_ufcs_soft_exit(struct oplus_ufcs *chip)
@@ -2248,6 +2441,7 @@ static void oplus_ufcs_soft_exit(struct oplus_ufcs *chip)
 		vote(chip->wired_suspend_votable, UFCS_VOTER, false, 0, false);
 	if (is_disable_charger_vatable_available(chip))
 		vote(chip->chg_disable_votable, UFCS_VOTER, false, 0, false);
+	oplus_ufcs_publish_test_mode(chip);
 }
 
 static int oplus_ufcs_get_verify_data(struct oplus_ufcs *chip, int index)
@@ -2475,6 +2669,8 @@ static int oplus_ufcs_deal_power_info(struct oplus_ufcs *chip)
 {
 	int rc;
 	enum oplus_chg_protocol_type type;
+	int power_mw;
+	int ibus_ma;
 
 	rc = oplus_chg_ufcs_get_power_info_ext(chip, chip->pie, UFCS_OPLUS_VND_POWER_INFO_MAX);
 	if (rc <= 0) {
@@ -2486,6 +2682,15 @@ static int oplus_ufcs_deal_power_info(struct oplus_ufcs *chip)
 	}
 	chip->power_imax = oplus_ufcs_get_power_ability(chip);
 
+	if (chip->keep_topic != NULL) {
+		power_mw = oplus_cpa_protocol_get_power(chip->cpa_topic, CHG_PROTOCOL_UFCS);
+		if (power_mw > 0) {
+			ibus_ma = power_mw * 1000 / chip->config.target_vbus_mv;
+			chg_info("ibus_ma=%d, power_mw=%d\n", ibus_ma, power_mw);
+			if (ibus_ma < chip->power_imax)
+				chip->power_imax = ibus_ma;
+		}
+	}
 	if (chip->power_imax > 0)
 		vote(chip->ufcs_curr_votable, ADAPTER_IMAX_VOTER, true, chip->power_imax, false);
 
@@ -2576,22 +2781,43 @@ static void oplus_ufcs_sub_btb_connnect_check(struct oplus_ufcs *chip)
 
 static int oplus_ufcs_get_start_curr_min(struct oplus_ufcs *chip)
 {
+	if (chip->pr_config.support_pr)
+		return UFCS_PR_START_CURR_MA;
+
 	if (chip->oplus_ufcs_adapter)
 		return UFCS_START_DEF_CURR_MA_OPLUS;
 	else
 		return UFCS_START_DEF_CURR_MA_THIRD;
 }
 
+static bool oplus_ufcs_check_ufcs_continue(struct oplus_ufcs *chip)
+{
+	if (chip->config.curr_max_ma <= UFCS_VERIFY_CURR_THR_MA && !chip->retention_topic) {
+		if (!oplus_cpa_protocol_check_enable(chip->cpa_topic, CHG_PROTOCOL_VOOC))
+			return true;
+		chg_info("Not support high power UFCS, switch SVOOC");
+		return false;
+	}
+	return true;
+}
+
 static int oplus_ufcs_deal_third_power_info(struct oplus_ufcs *chip)
 {
 	int power_mw = 0;
 	int rc = 0;
+	int project_power = 0;
 
 	if (NULL == chip)
 		return -EINVAL;
 
 	power_mw = chip->config.target_vbus_mv * chip->adapter_max_curr / 1000;
 
+	project_power = chip->third_curve_target_vbus_mv * chip->third_curve_target_ibus_ma / 1000;
+
+	if (!project_power)
+		project_power = UFCS_POWER_TYPE_V0;
+
+	power_mw = min(power_mw, project_power);
 	rc = oplus_cpa_protocol_set_power(chip->cpa_topic, CHG_PROTOCOL_UFCS, power_mw);
 	if (rc < 0) {
 		chg_err("can't set ufcs protocol power data\n");
@@ -2676,7 +2902,7 @@ static void oplus_ufcs_switch_check_work(struct work_struct *work)
 	chg_info("dev_info=0x%llx\n", chip->dev_info);
 	oplus_ufcs_set_adapter_id(chip, UFCS_DEVICE_INFO_HW_VER(chip->dev_info));
 
-	if (oplus_is_ufcs_abnormal_adapter(chip, chip->dev_info)) {
+	if (!chip->pr_config.support_pr && oplus_is_ufcs_abnormal_adapter(chip, chip->dev_info)) {
 		chg_info("is abnormal ufcs adapter, exit\n");
 		goto next;
 	}
@@ -2684,6 +2910,7 @@ static void oplus_ufcs_switch_check_work(struct work_struct *work)
 	if (oplus_chg_ufcs_is_test_mode(chip)) {
 		chg_info("test mode\n");
 		oplus_ufcs_set_online(chip, true);
+		oplus_ufcs_publish_test_mode(chip);
 		return;
 	}
 
@@ -2696,11 +2923,8 @@ static void oplus_ufcs_switch_check_work(struct work_struct *work)
 	if (UFCS_DEVICE_INFO_IC_VENDOR(chip->dev_info) == 0) {
 		if (UFCS_DEVICE_INFO_DEV_VENDOR(chip->dev_info) == UFCS_OPLUS_DEV_ID) {
 			oplus_ufcs_set_ufcs_vid(chip, UFCS_OPLUS_DEV_ID);
-			if (chip->config.curr_max_ma <= UFCS_VERIFY_CURR_THR_MA &&
-				!chip->retention_topic) {
-				chg_info("Not support high power UFCS, switch SVOOC");
+			if (!oplus_ufcs_check_ufcs_continue(chip))
 				goto next;
-			}
 			if (unlikely(!chip->auth_data_ok)) {
 				chg_err("auth data not ready");
 			} else if (chip->adapter_verify_fail_flag && chip->retention_state) {
@@ -2995,7 +3219,8 @@ static int oplus_ufcs_charge_start(struct oplus_ufcs *chip)
 					chip->startup_retry_times = 0;
 					chip->start_check = false;
 					oplus_ufcs_set_charging(chip, true);
-					if (chip->oplus_ufcs_adapter)
+					oplus_ufcs_vfa_reset(chip);
+					if (chip->oplus_ufcs_adapter && !chip->pr_config.support_pr)
 						chip->target_vbus_mv = chip->config.target_vbus_mv;
 					else
 						chip->target_vbus_mv = chip->vol_set_mv;
@@ -3006,7 +3231,16 @@ static int oplus_ufcs_charge_start(struct oplus_ufcs *chip)
 					}
 					chip->timer.monitor_jiffies = jiffies;
 					oplus_ufcs_deep_ratio_limit_curr(chip);
-					schedule_delayed_work(&chip->current_work,  msecs_to_jiffies(UFCS_START_CHECK_DELAY_MS));
+
+					if (chip->pr_config.support_pr) {
+						ufcs_pr_init(chip);
+						schedule_delayed_work(&chip->current_work,
+							msecs_to_jiffies(UFCS_PR_START_DELAY_MS));
+					} else {
+						schedule_delayed_work(&chip->current_work,
+							msecs_to_jiffies(UFCS_START_CHECK_DELAY_MS));
+					}
+
 					oplus_ufcs_cp_reg_dump(chip);
 					return 0;
 				}
@@ -3114,10 +3348,13 @@ update_vol:
 		return rc;
 	}
 
+	if (chip->pr_config.support_pr)
+		return UFCS_PR_START_DELAY_MS;
+
 	if (chip->config.adsp_ufcs_project)
 		return ADSP_UFCS_START_PDO_DELAY_MS;
-	else
-		return UFCS_START_PDO_DELAY_MS;
+
+	return UFCS_START_PDO_DELAY_MS;
 }
 
 static void oplus_ufcs_reset_temp_range(struct oplus_ufcs *chip)
@@ -3355,7 +3592,7 @@ oplus_ufcs_set_current_temp_normal_range(struct oplus_ufcs *chip,
 	default:
 		break;
 	}
-	chg_info("the ret: %d, the temp =%d, status = %d\r\n", ret,
+	chg_info("the ret: %d, the temp =%d, status = %d\n", ret,
 		 vbat_temp_cur, chip->ufcs_fastchg_batt_temp_status);
 	return ret;
 }
@@ -3726,13 +3963,15 @@ static void oplus_ufcs_check_low_curr_temp_status(struct oplus_ufcs *chip)
 static void oplus_ufcs_check_sw_full(struct oplus_ufcs *chip, struct puc_strategy_ret_data *data)
 {
 	int cool_sw_vth, normal_sw_vth, normal_hw_vth;
+	struct oplus_ufcs_config *config = &chip->config;
 	union mms_msg_data mms_data = { 0 };
 	int batt_temp, vbat_mv;
 	int rc;
-
 #define UFCS_FULL_COUNTS_COOL		6
 #define UFCS_FULL_COUNTS_SW		6
 #define UFCS_FULL_COUNTS_HW		3
+#define UFCS_PR_FULL_COUNTS_HW		12
+	int hw_full_cnt = chip->pr_config.support_pr ? UFCS_PR_FULL_COUNTS_HW : UFCS_FULL_COUNTS_HW;
 
 	if (!chip->oplus_ufcs_adapter) {
 		cool_sw_vth = chip->limits.ufcs_full_cool_sw_vbat_third;
@@ -3749,7 +3988,7 @@ static void oplus_ufcs_check_sw_full(struct oplus_ufcs *chip, struct puc_strateg
 		vote(chip->ufcs_disable_votable, NO_DATA_VOTER, true, 1, false);
 		return;
 	}
-	rc = oplus_mms_get_item_data(chip->gauge_topic, GAUGE_ITEM_REAL_TEMP, &mms_data, true);
+	rc = oplus_mms_get_item_data(chip->comm_topic, COMM_ITEM_SHELL_TEMP, &mms_data, true);
 	if (rc < 0) {
 		chg_err("can't get battery temp, rc=%d\n", rc);
 		vote(chip->ufcs_disable_votable, NO_DATA_VOTER, true, 1, false);
@@ -3764,11 +4003,18 @@ static void oplus_ufcs_check_sw_full(struct oplus_ufcs *chip, struct puc_strateg
 	}
 	vbat_mv = mms_data.intval;
 
-	if ((batt_temp < chip->limits.ufcs_cool_temp) && (vbat_mv > cool_sw_vth)) {
+	if (!chip->pr_config.support_pr && (batt_temp < chip->limits.ufcs_cool_temp) && (vbat_mv > cool_sw_vth)) {
 		chip->count.cool_fw++;
 		if (chip->count.cool_fw >= UFCS_FULL_COUNTS_COOL) {
 			chip->count.cool_fw = 0;
-			vote(chip->ufcs_disable_votable, CHG_FULL_VOTER, true, 1, false);
+			chg_info("batt_temp:%d vbat_mv:%d cool sw full\n", batt_temp, vbat_mv);
+			if (chip->config.ufcs_full_recheck_temp != -EINVAL &&
+			    batt_temp <= config->ufcs_full_recheck_temp) {
+				chip->ufcs_cool_full_temp_range = chip->ufcs_temp_cur_range;
+				vote(chip->ufcs_not_allow_votable, CHG_FULL_COOL_VOTER, true, 1, false);
+			} else {
+				vote(chip->ufcs_disable_votable, CHG_FULL_VOTER, true, 1, false);
+			}
 			return;
 		}
 	} else {
@@ -3777,22 +4023,40 @@ static void oplus_ufcs_check_sw_full(struct oplus_ufcs *chip, struct puc_strateg
 
 	if ((batt_temp >= chip->limits.ufcs_cool_temp) &&
 	    (batt_temp < chip->limits.ufcs_batt_over_high_temp)) {
-		if ((vbat_mv > normal_sw_vth) && data->last_gear) {
+		if (!chip->pr_config.support_pr && (vbat_mv > normal_sw_vth) && data->last_gear) {
 			chip->count.sw_full++;
 			if (chip->count.sw_full >= UFCS_FULL_COUNTS_SW) {
 				chip->count.sw_full = 0;
-				vote(chip->ufcs_disable_votable, CHG_FULL_VOTER, true, 1, false);
+				chg_info("batt_temp:%d vbat_mv:%d normal sw full\n", batt_temp, vbat_mv);
+				if (chip->config.ufcs_full_recheck_temp != -EINVAL &&
+				    batt_temp <= config->ufcs_full_recheck_temp) {
+					chip->ufcs_cool_full_temp_range = chip->ufcs_temp_cur_range;
+					vote(chip->ufcs_not_allow_votable, CHG_FULL_COOL_VOTER, true, 1, false);
+				} else {
+					vote(chip->ufcs_disable_votable, CHG_FULL_VOTER, true, 1, false);
+				}
 				return;
 			}
+		} else {
+			chip->count.sw_full = 0;
 		}
 
 		if ((vbat_mv > normal_hw_vth)) {
 			chip->count.hw_full++;
-			if (chip->count.hw_full >= UFCS_FULL_COUNTS_HW) {
+			if (chip->count.hw_full >= hw_full_cnt) {
 				chip->count.hw_full = 0;
-				vote(chip->ufcs_disable_votable, CHG_FULL_VOTER, true, 1, false);
+				chg_info("batt_temp:%d vbat_mv:%d normal hw full\n", batt_temp, vbat_mv);
+				if (chip->config.ufcs_full_recheck_temp != -EINVAL &&
+				    batt_temp <= config->ufcs_full_recheck_temp) {
+					chip->ufcs_cool_full_temp_range = chip->ufcs_temp_cur_range;
+					vote(chip->ufcs_not_allow_votable, CHG_FULL_COOL_VOTER, true, 1, false);
+				} else {
+					vote(chip->ufcs_disable_votable, CHG_FULL_VOTER, true, 1, false);
+				}
 				return;
 			}
+		} else {
+			chip->count.hw_full = 0;
 		}
 	} else {
 		chip->count.sw_full = 0;
@@ -3801,14 +4065,14 @@ static void oplus_ufcs_check_sw_full(struct oplus_ufcs *chip, struct puc_strateg
 
 	if ((chip->ufcs_fastchg_batt_temp_status == UFCS_BAT_TEMP_WARM) &&
 	    (vbat_mv > chip->limits.ufcs_full_warm_vbat)) {
-		chip->count.cool_fw++;
-		if (chip->count.cool_fw >= UFCS_FULL_COUNTS_COOL) {
-			chip->count.cool_fw = 0;
+		chip->count.warm_fw++;
+		if (chip->count.warm_fw >= UFCS_FULL_COUNTS_COOL) {
+			chip->count.warm_fw = 0;
 			vote(chip->ufcs_not_allow_votable, CHG_FULL_WARM_VOTER, true, 1, false);
 			return;
 		}
 	} else {
-		chip->count.cool_fw = 0;
+		chip->count.warm_fw = 0;
 	}
 }
 
@@ -3893,7 +4157,7 @@ static void oplus_ufcs_update_low_curr_full(struct oplus_ufcs *chip)
 	int batt_alarm = 0;
 	const char alarm[] = "alarm";
 
-	if (oplus_get_chg_spec_version() == OPLUS_CHG_SPEC_VER_V3P7) {
+	if (oplus_get_chg_spec_version() >= OPLUS_CHG_SPEC_VER_V3P7) {
 		if (chip->oplus_ufcs_adapter) {
 			for (i = 0; i < chip->oplus_lcf_num && chip->oplus_lcf_strategy[i]; i++) {
 				rc = oplus_chg_strategy_get_data(chip->oplus_lcf_strategy[i], &ret_val);
@@ -4511,6 +4775,9 @@ static int oplus_ufcs_set_fcl_curr(struct oplus_ufcs *chip)
 #define ROUND_DOWN(a, n) (((a) / (n)) * (n))
 #define FCL_LIMIT_CNTS 3
 
+	if (chip->pr_config.support_pr)
+		return 0;
+
 	if (!chip->fcl_support)
 	    return rc;
 
@@ -4578,7 +4845,8 @@ static int oplus_ufcs_set_fcl_curr(struct oplus_ufcs *chip)
 
 		fcl_limit = ROUND_DOWN(fcl_limit, 50);
 		if (fcl_limit)
-			vote(chip->ufcs_curr_votable, LIMIT_FCL_VOTER, true, fcl_limit, false);
+			vote(chip->ufcs_curr_votable, LIMIT_FCL_VOTER, true,
+				max(fcl_limit, oplus_ufcs_get_start_curr_min(chip)), false);
 		else
 			vote(chip->ufcs_curr_votable, LIMIT_FCL_VOTER, false, 0, false);
 	}
@@ -4608,6 +4876,9 @@ static void oplus_ufcs_protection_check(struct oplus_ufcs *chip, struct puc_stra
 static void oplus_ufcs_set_soc_current(struct oplus_ufcs *chip)
 {
 	int curr_ma = 0;
+
+	if (chip->pr_config.support_pr)
+		return;
 
 	if (chip->config.curr_max_ma_percent_75 <= 0 || chip->config.curr_max_ma_percent_85 <= 0)
 		return;
@@ -4642,7 +4913,7 @@ static void oplus_ufcs_monitor_work(struct work_struct *work)
 	if (!chip->ufcs_charging) {
 		rc = oplus_ufcs_charge_start(chip);
 		if (rc < 0) {
-			if (chip->ufcs_online) {
+			if (chip->ufcs_online && !chip->prot_crash && !chip->subsys_reset_ufcs) {
 				chg_info("rc=%d, goto next\n", rc);
 				goto next;
 			} else {
@@ -4662,24 +4933,35 @@ static void oplus_ufcs_monitor_work(struct work_struct *work)
 			chg_err("can't get strategy data, rc=%d", rc);
 			goto exit;
 		}
-		if (data.exit) {
+		if (data.exit || chip->pr_data.full) {
 			chg_info("exit ufcs fast charge, start ffc\n");
 			switch_to_ffc = true;
-			if (chip->ufcs_fastchg_batt_temp_status == UFCS_BAT_TEMP_WARM)
+			if (chip->ufcs_fastchg_batt_temp_status == UFCS_BAT_TEMP_WARM) {
 				vote(chip->ufcs_not_allow_votable, CHG_FULL_WARM_VOTER, true, 1, false);
-			else
+			} else if (chip->config.ufcs_full_recheck_temp != -EINVAL &&
+				   chip->shell_temp <= chip->config.ufcs_full_recheck_temp) {
+				chip->ufcs_cool_full_temp_range = chip->ufcs_temp_cur_range;
+				vote(chip->ufcs_not_allow_votable, CHG_FULL_COOL_VOTER, true, 1, false);
+			} else {
 				vote(chip->ufcs_disable_votable, CHG_FULL_VOTER, true, 1, false);
+			}
 			goto exit;
 		}
 
-		oplus_ufcs_check_bcc_curr(chip, &data);
+		if (chip->pr_config.support_pr)
+			ufcs_pr_check_bcc_curr(chip);
+		else
+			oplus_ufcs_check_bcc_curr(chip, &data);
 		oplus_ufcs_set_cool_down_curr(chip, chip->cool_down);
 		oplus_ufcs_set_batt_bal_curr(chip);
 		oplus_ufcs_check_slow_chg_curr(chip, &data);
 		oplus_ufcs_set_fcl_curr(chip);
 		oplus_ufcs_set_plc_curr(chip);
 		oplus_ufcs_protection_check(chip, &data);
-		if (get_client_vote(chip->ufcs_disable_votable, CHG_FULL_VOTER) > 0) {
+		if (chip->pr_config.support_pr)
+			oplus_ufcs_check_current_low(chip);
+		if (get_client_vote(chip->ufcs_disable_votable, CHG_FULL_VOTER) > 0 ||
+			get_client_vote(chip->ufcs_not_allow_votable, CHG_FULL_COOL_VOTER) > 0) {
 			chg_info("exit ufcs fast charge, start ffc\n");
 			switch_to_ffc = true;
 			goto exit;
@@ -4703,7 +4985,8 @@ static void oplus_ufcs_monitor_work(struct work_struct *work)
 	return;
 
 exit:
-	oplus_ufcs_soft_exit(chip);
+	if (!chip->subsys_reset_ufcs)
+		oplus_ufcs_soft_exit(chip);
 	if (switch_to_ffc) {
 		if (is_disable_charger_vatable_available(chip))
 			vote(chip->chg_disable_votable, FASTCHG_VOTER, true, 1, false);
@@ -4904,6 +5187,26 @@ exit:
 	return;
 }
 
+#include <oplus_chg_ufcs_pr.h>
+static void oplus_ufcs_pr_current_work(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct oplus_ufcs *chip = container_of(dwork, struct oplus_ufcs, current_work);
+	int rc = 0;
+	int delay_ms = UFCS_PR_DELAY_MS;
+
+	if (!chip->ufcs_charging)
+		return;
+
+	rc = oplus_ufcs_pr_update_data(chip);
+	if (rc < 0)
+		goto done;
+
+	delay_ms = ufcs_pr_run(chip);
+done:
+	schedule_delayed_work(&chip->current_work, msecs_to_jiffies(delay_ms));
+}
+
 static void oplus_ufcs_current_work(struct work_struct *work)
 {
 #define UFCS_CURR_CHANGE_UPDATE_DELAY		200
@@ -4998,6 +5301,8 @@ static void oplus_ufcs_wired_online_work(struct work_struct *work)
 		oplus_ufcs_reset_temp_range(chip);
 		oplus_ufcs_set_ufcs_vid(chip, 0);
 		vote(chip->ufcs_curr_votable, BAD_SUB_BTB_VOTER, false, 0, false);
+		vote(chip->ufcs_not_allow_votable, CHG_FULL_COOL_VOTER, false, 0, false);
+		oplus_ufcs_vfa_reset(chip);
 	} else {
 		chip->retention_state_ready = false;
 		if (READ_ONCE(chip->disconnect_change) && !chip->ufcs_online &&
@@ -5032,6 +5337,35 @@ static void oplus_ufcs_soft_exit_work(struct work_struct *work)
 		cancel_delayed_work_sync(&chip->switch_check_work);
 		cancel_delayed_work_sync(&chip->monitor_work);
 		cancel_delayed_work_sync(&chip->current_work);
+	}
+}
+
+static void oplus_ufcs_offset_current_temp_range(struct oplus_ufcs *chip, int up_thr_offset, int down_thr_offset)
+{
+	int vbat_temp_cur;
+
+	vbat_temp_cur = chip->shell_temp;
+	oplus_ufcs_reset_temp_range(chip);
+	if (vbat_temp_cur < chip->limits.ufcs_little_cold_temp) { /*<5C*/
+		chip->limits.ufcs_little_cold_temp += up_thr_offset;
+	} else if (vbat_temp_cur < chip->limits.ufcs_cool_temp) { /*<12C*/
+		chip->limits.ufcs_cool_temp += up_thr_offset;
+		chip->limits.ufcs_little_cold_temp += down_thr_offset;
+	} else if (vbat_temp_cur < chip->limits.ufcs_little_cool_temp) { /*<20C*/
+		chip->limits.ufcs_little_cool_temp += up_thr_offset;
+		chip->limits.ufcs_cool_temp += down_thr_offset;
+	} else if (chip->limits.ufcs_little_cool_high_temp != -EINVAL &&
+	    vbat_temp_cur < chip->limits.ufcs_little_cool_high_temp) { /*<21C*/
+		chip->limits.ufcs_little_cool_high_temp += up_thr_offset;
+		chip->limits.ufcs_little_cool_temp += down_thr_offset;
+	} else if (vbat_temp_cur < chip->limits.ufcs_normal_low_temp) { /*<35C*/
+		chip->limits.ufcs_normal_low_temp += up_thr_offset;
+		chip->limits.ufcs_little_cool_high_temp += down_thr_offset;
+	} else if (vbat_temp_cur < chip->limits.ufcs_normal_high_temp) { /*<43C*/
+		chip->limits.ufcs_normal_high_temp += up_thr_offset;
+		chip->limits.ufcs_normal_low_temp += down_thr_offset;
+	} else {							/*>=43*/
+		chip->limits.ufcs_normal_high_temp += down_thr_offset;
 	}
 }
 
@@ -5093,6 +5427,22 @@ static void oplus_ufcs_allow_recover_check(struct oplus_ufcs *chip)
 			vote(chip->ufcs_not_allow_votable, CHG_FULL_WARM_VOTER, false, 0, false);
 		}
 	}
+
+	if (is_client_vote_enabled(chip->ufcs_not_allow_votable, CHG_FULL_COOL_VOTER)) {
+		oplus_ufcs_temp_cur_range_init(chip);
+		if (chip->ufcs_temp_cur_range > chip->ufcs_cool_full_temp_range) {
+			chg_info("allow ufcs charging, cur_temp_range=%d, full_temp_range=%d, shell_temp=%d\n",
+				chip->ufcs_temp_cur_range, chip->ufcs_cool_full_temp_range, chip->shell_temp);
+			oplus_ufcs_offset_current_temp_range(chip, 0, -UFCS_TEMP_LOW_RANGE_THD);
+			if (chip->config.ufcs_need_reset_adapter)
+				chip->reset_adapter = true;
+			chip->ufcs_cool_full_temp_range = UFCS_TEMP_RANGE_WARM;
+			vote(chip->ufcs_not_allow_votable, CHG_FULL_COOL_VOTER, false, 0, false);
+		}
+	}
+
+	if (is_client_vote_enabled(chip->ufcs_not_allow_votable, VFA_VOTER))
+		oplus_ufcs_vfa_allow(chip, false);
 }
 
 static void oplus_ufcs_gauge_update_work(struct work_struct *work)
@@ -5257,6 +5607,20 @@ static void oplus_ufcs_restart_work(struct work_struct *work)
 		schedule_delayed_work(&chip->switch_check_work, msecs_to_jiffies(UFCS_MONITOR_CYCLE_MS));
 }
 
+static void oplus_ufcs_subsys_reset_work(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct oplus_ufcs *chip =
+		container_of(dwork, struct oplus_ufcs, ufcs_subsys_reset_work);
+	union mms_msg_data data = { 0 };
+
+	chip->subsys_reset_ufcs = false;
+	oplus_mms_get_item_data(chip->cpa_topic, CPA_ITEM_ALLOW, &data, true);
+	if (data.intval == CHG_PROTOCOL_UFCS)
+		schedule_delayed_work(&chip->switch_check_work, msecs_to_jiffies(UFCS_MONITOR_CYCLE_MS));
+}
+
+
 static void oplus_ufcs_eis_work(struct work_struct *work)
 {
 	struct delayed_work *dwork = to_delayed_work(work);
@@ -5342,6 +5706,32 @@ static void oplus_ufcs_send_authdata_to_adsp_work(struct work_struct *work)
 	}
 }
 
+static void oplus_ufcs_flash_mode_handle(struct oplus_ufcs *chip)
+{
+	union mms_msg_data data = { 0 };
+	int rc;
+
+	if (!chip || !chip->comm_topic) {
+		chg_err("invalid chip or comm_topic\n");
+		return;
+	}
+
+	rc = oplus_mms_get_item_data(chip->comm_topic, COMM_ITEM_FLASH_MODE,
+				     &data, false);
+	if (rc < 0) {
+		chg_err("can't get flashmode status, rc=%d", rc);
+	} else {
+		if (chip->config.ufcs_need_reset_adapter && chip->wired_online &&
+		    !!data.intval == 0 && chip->last_chg_flashmode == 1) {
+			chip->reset_adapter = true;
+			chg_info("get flashmode status, %d %d %d %d", chip->config.ufcs_need_reset_adapter,
+				chip->wired_online, !!data.intval, chip->last_chg_flashmode);
+		}
+		vote(chip->ufcs_not_allow_votable, FLASH_MODE_VOTER, !!data.intval, data.intval, false);
+		chip->last_chg_flashmode = !!data.intval;
+	}
+}
+
 static void oplus_ufcs_comm_subs_callback(struct mms_subscribe *subs,
 					 enum mms_msg_type type, u32 id, bool sync)
 {
@@ -5398,6 +5788,9 @@ static void oplus_ufcs_comm_subs_callback(struct mms_subscribe *subs,
 				last_charge_suspend = !!data.intval;
 			}
 			break;
+		case COMM_ITEM_FLASH_MODE:
+			oplus_ufcs_flash_mode_handle(chip);
+			break;
 		case COMM_ITEM_COOL_DOWN:
 			rc = oplus_mms_get_item_data(chip->comm_topic, id,
 						     &data, false);
@@ -5435,6 +5828,12 @@ static void oplus_ufcs_comm_subs_callback(struct mms_subscribe *subs,
 			if (rc < 0)
 				chg_err("can't get sale mode data, rc=%d", rc);
 			chip->chg_ctrl_by_sale_mode = (bool)data.intval;
+			break;
+		case COMM_ITEM_LED_ON:
+			rc = oplus_mms_get_item_data(chip->comm_topic, id, &data, false);
+			if (rc < 0)
+				chg_err("can't get led on data, rc=%d", rc);
+			chip->led_on = !!data.intval;
 			break;
 		default:
 			break;
@@ -5504,6 +5903,12 @@ static void oplus_ufcs_subscribe_comm_topic(struct oplus_mms *topic,
 		chg_err("can't get sale mode data, rc=%d", rc);
 	else
 		chip->chg_ctrl_by_sale_mode = (bool)data.intval;
+
+	rc = oplus_mms_get_item_data(chip->comm_topic, COMM_ITEM_LED_ON, &data, true);
+	if (rc < 0)
+		chg_err("can't get sale mode data, rc=%d", rc);
+	else
+		chip->led_on = !!data.intval;
 
 	vote(chip->ufcs_boot_votable, COMM_TOPIC_VOTER, false, 0, false);
 
@@ -5596,13 +6001,21 @@ static void oplus_ufcs_cpa_subs_callback(struct mms_subscribe *subs,
 		case CPA_ITEM_ALLOW:
 			oplus_mms_get_item_data(chip->cpa_topic, id, &data,
 						false);
+			if (chip->cpa_current_type == CHG_PROTOCOL_UFCS && data.intval != CHG_PROTOCOL_UFCS)
+				oplus_ufcs_vfa_reset(chip);
 			chip->cpa_current_type = data.intval;
+			/* Add work delay for BC1.2 check, for the Protocol-retention 1.0 may
+			   cause switching to the UFCS error when BC1.2 is not ready. */
+			/* Todo: revert this submission when Protocol-retention 2.0 has been
+			   imported */
 			if (chip->cpa_current_type == CHG_PROTOCOL_UFCS) {
-				oplus_mms_get_item_data(chip->wired_topic, WIRED_ITEM_REAL_CHG_TYPE, &data, false);
+				oplus_mms_get_item_data(chip->wired_topic, WIRED_ITEM_REAL_CHG_TYPE,
+							&data, false);
 				if (data.intval != OPLUS_CHG_USB_TYPE_UNKNOWN)
 					schedule_delayed_work(&chip->switch_check_work, 0);
 				else
-					schedule_delayed_work(&chip->switch_check_work, msecs_to_jiffies(WAIT_BC1P2_GET_TYPE));
+					schedule_delayed_work(&chip->switch_check_work,
+						msecs_to_jiffies(WAIT_BC1P2_GET_TYPE));
 			}
 			break;
 		case CPA_ITEM_TIMEOUT:
@@ -5808,10 +6221,8 @@ static void oplus_ufcs_subscribe_gauge_topic(struct oplus_mms *topic,
 		chip->batt_auth = !!data.intval;
 	}
 
-	if (!chip->batt_hmac || !chip->batt_auth) {
-		vote(chip->ufcs_disable_votable, NON_STANDARD_VOTER, true, 1,
-		     false);
-	}
+	chg_info("hmac=%d, authenticate=%d\n", chip->batt_hmac, chip->batt_auth);
+	vote(chip->ufcs_disable_votable, NON_STANDARD_VOTER, !chip->batt_hmac || !chip->batt_auth, 0, false);
 
 	oplus_gauge_get_fcl_support(chip->gauge_topic, &chip->fcl_support);
 
@@ -6134,6 +6545,16 @@ static void oplus_ufcs_subscribe_plc_topic(struct oplus_mms *topic,
 		chg_err("register ufcs plc protocol error");
 }
 
+#if IS_ENABLED(CONFIG_OPLUS_CHG_STATE_KEEP)
+static void oplus_ufcs_subscribe_keep_topic(struct oplus_mms *topic,
+					    void *prv_data)
+{
+	struct oplus_ufcs *chip = prv_data;
+
+	chip->keep_topic = topic;
+}
+#endif
+
 static int oplus_ufcs_update_online(struct oplus_mms *mms,
 				    union mms_msg_data *data)
 {
@@ -6368,6 +6789,30 @@ static int oplus_ufcs_update_ufcs_err_type(
 	return 0;
 }
 
+static int oplus_ufcs_update_test_mode(
+	struct oplus_mms *mms, union mms_msg_data *data)
+{
+	struct oplus_ufcs *chip;
+	bool test_mode = false;
+
+	if (mms == NULL) {
+		chg_err("topic is NULL\n");
+		return -EINVAL;
+	}
+
+	if (data == NULL) {
+		chg_err("data is NULL\n");
+		return -EINVAL;
+	}
+
+	chip = oplus_mms_get_drvdata(mms);
+	if (chip != NULL && chip->ufcs_online)
+		test_mode = oplus_chg_ufcs_is_test_mode(chip);
+
+	data->intval = test_mode;
+	return 0;
+}
+
 static void oplus_ufcs_topic_update(struct oplus_mms *mms, bool publish)
 {
 }
@@ -6447,6 +6892,14 @@ static struct mms_item oplus_ufcs_item[] = {
 		.desc = {
 			.item_id = UFCS_ITEM_ERR_TYPE,
 			.update = oplus_ufcs_update_ufcs_err_type,
+		}
+	},
+	{
+		.desc = {
+			.item_id = UFCS_ITEM_TEST_MODE,
+			.update = oplus_ufcs_update_test_mode,
+			.dead_thr_enable = true,
+			.dead_zone_thr = 1,
 		}
 	},
 };
@@ -6548,6 +7001,9 @@ static void oplus_ufcs_ic_reg_callback(struct oplus_chg_ic_dev *ic, void *data, 
 	oplus_mms_wait_topic("batt_bal", oplus_ufcs_subscribe_batt_bal_topic, chip);
 	oplus_mms_wait_topic("retention", oplus_ufcs_subscribe_retention_topic, chip);
 	oplus_mms_wait_topic("plc", oplus_ufcs_subscribe_plc_topic, chip);
+#if IS_ENABLED(CONFIG_OPLUS_CHG_STATE_KEEP)
+	oplus_mms_wait_topic("state_keep", oplus_ufcs_subscribe_keep_topic, chip);
+#endif
 	return;
 
 topic_reg_err:
@@ -6628,14 +7084,16 @@ static void oplus_ufcs_cp_online_handler_work(struct work_struct *work)
 {
 	struct oplus_ufcs *chip =
 		container_of(work, struct oplus_ufcs, cp_online_handler_work);
-	vote(chip->ufcs_disable_votable, CP_OFFLINE_VOTER, false, false, false);
+	bool cp_offline = !!atomic_read(&chip->cp_offline);
+	vote(chip->ufcs_disable_votable, CP_OFFLINE_VOTER, cp_offline, cp_offline, false);
 }
 
 static void oplus_ufcs_cp_offline_handler_work(struct work_struct *work)
 {
 	struct oplus_ufcs *chip =
 		container_of(work, struct oplus_ufcs, cp_offline_handler_work);
-	vote(chip->ufcs_disable_votable, CP_OFFLINE_VOTER, true, true, false);
+	bool cp_offline = !!atomic_read(&chip->cp_offline);
+	vote(chip->ufcs_disable_votable, CP_OFFLINE_VOTER, cp_offline, cp_offline, false);
 }
 
 static void oplus_ufcs_cp_err_handler(struct oplus_chg_ic_dev *ic_dev, void *virq_data)
@@ -6650,6 +7108,7 @@ static void oplus_ufcs_cp_online_handler(struct oplus_chg_ic_dev *ic_dev, void *
 	struct oplus_ufcs *chip = virq_data;
 
 	chg_info("%s online\n", ic_dev->manu_name);
+	atomic_set(&chip->cp_offline, 0);
 	schedule_work(&chip->cp_online_handler_work);
 }
 
@@ -6658,6 +7117,7 @@ static void oplus_ufcs_cp_offline_handler(struct oplus_chg_ic_dev *ic_dev, void 
 	struct oplus_ufcs *chip = virq_data;
 
 	chg_err("%s offline\n", ic_dev->manu_name);
+	atomic_set(&chip->cp_offline, 1);
 	schedule_work(&chip->cp_offline_handler_work);
 }
 
@@ -7206,6 +7666,14 @@ static int oplus_ufcs_parse_dt(struct oplus_ufcs *chip)
 		config->ufcs_watt_third = SUPPORT_THIRD_UFCS_POWER;
 	}
 
+	rc = of_property_read_u32(node, "oplus,ufcs_full_recheck_temp", &config->ufcs_full_recheck_temp);
+	if (rc < 0) {
+		chg_err("not support ufcs full recheck\n");
+		config->ufcs_full_recheck_temp = -EINVAL;
+	}
+
+	ufcs_pr_parse_dt(chip, node);
+
 	(void)oplus_ufcs_parse_charge_strategy(chip);
 	(void)oplus_ufcs_parse_low_curr_full_curves(chip);
 
@@ -7627,6 +8095,11 @@ static int oplus_plat_ufcs_event_notifier_call(struct notifier_block *nb, unsign
 			schedule_delayed_work(&chip->ufcs_restart_timeout_work,
 					msecs_to_jiffies(UFCS_RESTART_TIMEOUT_MS));
 		}
+		if (v != NULL && (*(int *)v == UFCS_NOTIFY_UFCS_RESET_NOTIFY)) {
+			chip->subsys_reset_ufcs = true;
+			schedule_delayed_work(&chip->ufcs_subsys_reset_work,
+					msecs_to_jiffies(UFCS_RESET_MS));
+		}
 		break;
 	case UFCS_NOTIFY_RESTART_COMM:
 		chg_info("ufcs restart occurs\n");
@@ -7760,6 +8233,44 @@ static int oplus_ufcs_parse_lcf_strategy_dt(struct oplus_ufcs *chip)
 	return rc;
 }
 
+#define THIRD_MAX_POWER_DATA_LENGTH 5
+static int oplus_ufcs_get_third_max_power(struct oplus_ufcs *chip, struct device_node *node)
+{
+	int rc;
+	struct device_node *soc_node;
+	int data[THIRD_MAX_POWER_DATA_LENGTH] = { 0 };
+
+	if (node == NULL) {
+		chg_err("node is NULL\n");
+		rc = -ENODEV;
+		goto exit;
+	}
+
+	soc_node = of_get_child_by_name(node, "strategy_soc_range_min");
+	if (!soc_node) {
+		chg_err("can't find strategy_soc_range_mid node\n");
+		rc = -ENODEV;
+		goto exit;
+	}
+
+	rc = of_property_read_u32_array(
+			soc_node, "strategy_temp_normal_high",
+			(u32 *)data, THIRD_MAX_POWER_DATA_LENGTH);
+	if (rc < 0) {
+		chg_err("read strategy_temp_normal_high property error, rc=%d\n", rc);
+		goto exit;
+	}
+	chip->third_curve_target_vbus_mv = data[0];
+	chip->third_curve_target_ibus_ma = data[2];
+
+	chg_info("third_curve_target_vbus_mv=%d, third_curve_target_ibus_ma=%d\n",
+			chip->third_curve_target_vbus_mv, chip->third_curve_target_ibus_ma);
+
+	return 0;
+exit:
+	return rc;
+}
+
 static int oplus_ufcs_probe(struct platform_device *pdev)
 {
 	struct oplus_ufcs *chip;
@@ -7779,15 +8290,20 @@ static int oplus_ufcs_probe(struct platform_device *pdev)
 	init_completion(&chip->reset_abnormal_ack);
 
 	oplus_ufcs_parse_dt(chip);
+	atomic_set(&chip->cp_offline, 0);
 	INIT_DELAYED_WORK(&chip->switch_check_work, oplus_ufcs_switch_check_work);
 	INIT_DELAYED_WORK(&chip->monitor_work, oplus_ufcs_monitor_work);
-	INIT_DELAYED_WORK(&chip->current_work, oplus_ufcs_current_work);
+	if (chip->pr_config.support_pr)
+		INIT_DELAYED_WORK(&chip->current_work, oplus_ufcs_pr_current_work);
+	else
+		INIT_DELAYED_WORK(&chip->current_work, oplus_ufcs_current_work);
 	INIT_DELAYED_WORK(&chip->imp_uint_init_work, oplus_ufcs_imp_uint_init_work);
 	INIT_DELAYED_WORK(&chip->wait_auth_data_work, oplus_ufcs_wait_auth_data_work);
 	INIT_DELAYED_WORK(&chip->ufcs_restart_timeout_work, oplus_ufcs_restart_timeout_work);
 	INIT_DELAYED_WORK(&chip->ufcs_eis_work, oplus_ufcs_eis_work);
 	INIT_DELAYED_WORK(&chip->send_authdata_to_adsp_work, oplus_ufcs_send_authdata_to_adsp_work);
 	INIT_DELAYED_WORK(&chip->switch_end_recheck_work, oplus_ufcs_switch_end_recheck_work);
+	INIT_DELAYED_WORK(&chip->ufcs_subsys_reset_work, oplus_ufcs_subsys_reset_work);
 	INIT_WORK(&chip->wired_online_work, oplus_ufcs_wired_online_work);
 	INIT_WORK(&chip->force_exit_work, oplus_ufcs_force_exit_work);
 	INIT_WORK(&chip->soft_exit_work, oplus_ufcs_soft_exit_work);
@@ -7842,6 +8358,10 @@ static int oplus_ufcs_probe(struct platform_device *pdev)
 		rc = -EFAULT;
 		goto third_startegy_err;
 	}
+	rc = oplus_ufcs_get_third_max_power(chip, startegy_node);
+	if (rc < 0)
+		goto third_startegy_err;
+
 	startegy_node = of_get_child_by_name(oplus_get_node_by_type(pdev->dev.of_node), "ufcs_charge_oplus_strategy");
 	if (startegy_node == NULL) {
 		chg_err("ufcs_charge_oplus_strategy not found\n");
@@ -7857,6 +8377,8 @@ static int oplus_ufcs_probe(struct platform_device *pdev)
 	}
 
 	oplus_ufcs_parse_lcf_strategy_dt(chip);
+
+	oplus_ufcs_parse_vfa_strategy(chip);
 
 	/* Encryption is not required when the maximum current is less than 3A */
 	if (chip->config.curr_max_ma <= UFCS_VERIFY_CURR_THR_MA) {
@@ -7951,6 +8473,8 @@ static int oplus_ufcs_remove(struct platform_device *pdev)
 		oplus_mms_unsubscribe(chip->retention_subs);
 	if (!IS_ERR_OR_NULL(chip->plc_subs))
 		oplus_mms_unsubscribe(chip->plc_subs);
+	if (chip->vfa_strategy != NULL)
+		oplus_chg_strategy_release(chip->vfa_strategy);
 	if (chip->oplus_curve_strategy != NULL)
 		oplus_chg_strategy_release(chip->oplus_curve_strategy);
 	if (chip->third_curve_strategy != NULL)
@@ -8081,10 +8605,12 @@ int oplus_ufcs_get_ufcs_power(struct oplus_mms *mms)
 	}
 
 	chip = oplus_mms_get_drvdata(mms);
+	if (IS_ERR_OR_NULL(chip->cpa_topic))
+		return UFCS_POWER_TYPE_UNKOWN;
 	if (!chip->oplus_ufcs_adapter)
 		return oplus_cpa_protocol_get_power(chip->cpa_topic, CHG_PROTOCOL_UFCS) / 1000;
 
-	cpa_power = oplus_cpa_protocol_get_max_power(chip->cpa_topic) / 1000;
+	cpa_power = oplus_cpa_protocol_get_max_power_by_type(chip->cpa_topic, CHG_PROTOCOL_UFCS) / 1000;
 	power_result = oplus_ufcs_imax_covert_power(min(chip->emark_imax, chip->power_imax), chip->config.target_vbus_mv);
 	if (cpa_power && power_result > cpa_power)
 		power_result = cpa_power;

@@ -24,7 +24,7 @@
 
 #define BIDIRECT_IRQ_EVNET_NUM			12
 #define IRQ_EVNET_NUM_HL7138			16
-#define DEFAULT_CP_IBUS_DEVATION		800
+#define DEFAULT_CP_IBUS_DEVATION		1000
 #define MAX_IGNORE				6
 #define FIRST_FRAME				0xA8
 #define SVOOC_INIT_VBUS_VOL_LOW			5000
@@ -810,6 +810,7 @@ struct oplus_voocphy_manager {
 	struct delayed_work clear_boost_work;
 	struct delayed_work voocphy_send_ongoing_notify;
 	struct delayed_work recovery_system_work;
+	struct delayed_work pcc_work;
 	struct work_struct first_ask_batvol_work;
 	atomic_t  voocphy_freq_state;
 	bool recovery_system_done;
@@ -946,6 +947,13 @@ struct oplus_voocphy_manager {
 	bool slave_ic_abnormal;
 	struct delayed_work clear_ic_abnormal_status_work;
 	struct oplus_chg_strategy *svooc_pcc_strategy;
+	bool svooc_pcc_strategy_v2;
+
+	bool vbus_adjust_new_method;
+	bool vbus_adjust_done;
+	bool in_vbus_adjust_trans;
+	u8 vbus_adjust_hold_cnt;
+	u8 last_vooc_vbus_status;
 };
 
 struct oplus_voocphy_operations {
@@ -981,8 +989,8 @@ struct oplus_voocphy_operations {
 	int (*get_voocphy_enable)(struct oplus_voocphy_manager *chip, u8 *data);
 	void (*dump_voocphy_reg)(struct oplus_voocphy_manager *chip);
 	int (*get_chip_id)(struct oplus_voocphy_manager *chip);
-	int (*set_chg_pmid2out)(bool enable, int reason);
-	bool (*get_chg_pmid2out)(void);
+	int (*set_chg_pmid2out)(struct oplus_voocphy_manager *chip, bool enable, int reason);
+	bool (*get_chg_pmid2out)(struct oplus_voocphy_manager *chip);
 	int (*reset_voocphy_ovp)(struct oplus_voocphy_manager *chip);
 	bool (*check_cp_int_happened)(struct oplus_voocphy_manager *chip, bool *dump_reg, bool *send_info);
 	void (*dual_chan_buck_set_ucp)(struct oplus_voocphy_manager *chip, int ucp_value);
@@ -1009,6 +1017,7 @@ struct voocphy_log_buf {
 };
 
 bool oplus_voocphy_chip_is_null(void);
+bool oplus_voocphy_slave_chip_is_null(void);
 void oplus_voocphy_slave_init(struct oplus_voocphy_manager *chip);
 void oplus_voocphy_get_chip(struct oplus_voocphy_manager **chip);
 int oplus_register_voocphy(struct oplus_voocphy_manager *chip);

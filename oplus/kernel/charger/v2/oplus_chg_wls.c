@@ -376,6 +376,7 @@ struct oplus_chg_wls_dynamic_config {
 	int32_t epp_high_temp_thr;
 	uint32_t boot_quiet_t;
 	uint32_t camera_icl_limit;
+	uint32_t camera_handle_icl_limit;
 } __attribute__((packed));
 
 struct oplus_wls_chg_rx {
@@ -449,6 +450,7 @@ struct oplus_chg_wls_bt_info {
 	int connect;
 	int incar;
 	int carlink;
+	int bttype;
 };
 
 struct wls_track_record {
@@ -687,6 +689,7 @@ struct oplus_chg_wls {
 	struct mutex update_data_lock;
 	struct mutex tx_switch_lock;
 	struct mutex trx_enable_lock;
+	struct mutex usb_lock;
 
 	struct votable *fcc_votable;
 	struct votable *fastchg_disable_votable;
@@ -851,10 +854,10 @@ static struct wls_adapter_curve_table adapter_curves_table[] = {
 	{0x24, {{25, 30, 64, 290}, {20, 25, 64, -1}}}, {0x25, {{25, 30, 64, 290}, {20, 25, 64, -1}}},
 	{0x26, {{25, 30, 64, 290}, {20, 25, 64, -1}}}, {0x27, {{25, 30, 64, 290}, {20, 25, 64, -1}}},
 	/* 65W */
-	{0x14, {{35, 35, 64, 290}, {25, 30, 64, 600}, {25, 25, 64, -1}}}, {0x28, {{35, 35, 64, 290}, {25, 30, 64, 600}, {25, 25, 64, -1}}},
-	{0x2A, {{35, 35, 64, 290}, {25, 30, 64, 600}, {25, 25, 64, -1}}}, {0x35, {{35, 35, 64, 290}, {25, 30, 64, 600}, {25, 25, 64, -1}}},
-	{0x63, {{35, 35, 64, 290}, {25, 30, 64, 600}, {25, 25, 64, -1}}}, {0x66, {{35, 35, 64, 290}, {25, 30, 64, 600}, {25, 25, 64, -1}}},
-	{0x6E, {{35, 35, 64, 290}, {25, 30, 64, 600}, {25, 25, 64, -1}}}, {0x04, {{35, 35, 64, 290}, {25, 30, 64, 600}, {25, 25, 64, -1}}},
+	{0x14, {{35, 35, 64, 290}, {25, 30, 64, 600}, {20, 25, 64, -1}}}, {0x28, {{35, 35, 64, 290}, {25, 30, 64, 600}, {20, 25, 64, -1}}},
+	{0x2A, {{35, 35, 64, 290}, {25, 30, 64, 600}, {20, 25, 64, -1}}}, {0x35, {{35, 35, 64, 290}, {25, 30, 64, 600}, {20, 25, 64, -1}}},
+	{0x63, {{35, 35, 64, 290}, {25, 30, 64, 600}, {20, 25, 64, -1}}}, {0x66, {{35, 35, 64, 290}, {25, 30, 64, 600}, {20, 25, 64, -1}}},
+	{0x6E, {{35, 35, 64, 290}, {25, 30, 64, 600}, {20, 25, 64, -1}}}, {0x04, {{35, 35, 64, 290}, {25, 30, 64, 600}, {20, 25, 64, -1}}},
 
 	/* 66W */
 	{0x2B, {{35, 35, 64, 170}, {25, 30, 64, 180}, {25, 25, 64, -1}}}, {0x36, {{35, 35, 64, 170}, {25, 30, 64, 180}, {25, 25, 64, -1}}},
@@ -1154,6 +1157,33 @@ static int oplus_chg_wls_get_base_power_max(u8 id)
 	}
 
 	return pwr;
+}
+
+static void oplus_chg_wls_cam_scene_icl_limit(struct oplus_chg_wls *wls_dev)
+{
+	if (!wls_dev) {
+		chg_err("wls_dev is null\n");
+		return;
+	}
+
+	if (wls_dev->mms_info.rx_present != 1)
+		return;
+
+	if (wls_dev->dynamic_config.camera_handle_icl_limit > 0 &&
+	    wls_dev->bt_info.connect == 1 && wls_dev->bt_info.bttype == BT_MAG_HANDLE) {
+		cancel_delayed_work_sync(&wls_dev->wls_nor->icl_set_work);
+		vote(wls_dev->nor_icl_votable, WLS_CAMERA_MODE_VOTER, true,
+		     wls_dev->dynamic_config.camera_handle_icl_limit, false);
+		return;
+	}
+
+	if (wls_dev->dynamic_config.camera_icl_limit > 0) {
+		cancel_delayed_work_sync(&wls_dev->wls_nor->icl_set_work);
+		vote(wls_dev->nor_icl_votable, WLS_CAMERA_MODE_VOTER, true,
+		     wls_dev->dynamic_config.camera_icl_limit, false);
+	}
+
+	return;
 }
 
 static void oplus_chg_wls_adapter_curve_vote_work(struct work_struct *work)
@@ -2484,6 +2514,32 @@ static int oplus_chg_wls_force_bpp_mode_vote_callback(struct votable *votable, v
 	chg_info("rx_present: %d, bpp_mode_set %d, by %s\n", wls_dev->mms_info.rx_present, bpp_mode_set, client);
 
 	return 0;
+}
+
+static void oplus_wls_sub_btb_connnect_check(struct oplus_chg_wls *wls_dev)
+{
+	int btb_abnormal_current = 0;
+	union mms_msg_data data = { 0 };
+
+	if (NULL == wls_dev || NULL == wls_dev->gauge_topic)
+		return;
+
+	oplus_mms_get_item_data(wls_dev->gauge_topic, GAUGE_ITEM_SUB_BTB_STATE, &data,  false);
+	if (data.intval == BATT_BTB_STATE_NOT_CONNECT) {
+		btb_abnormal_current = oplus_gauge_get_sub_btb_curr_limit(wls_dev->gauge_topic);
+		chg_info("sub_btb_state = %d is abnormal, set limit current %d mA.\n",
+			data.intval, btb_abnormal_current);
+		if (btb_abnormal_current > 0)
+			vote(wls_dev->fcc_votable, BAD_SUB_BTB_VOTER, true,
+			     btb_abnormal_current, false);
+	} else if (data.intval == BATT_BTB_STATE_CONNECT) {
+		vote(wls_dev->fcc_votable, BAD_SUB_BTB_VOTER, false,
+			 0, false);
+	} else {
+		chg_info("state[%d] is not support now!", data.intval);
+	}
+
+	return;
 }
 
 static void  oplus_chg_wls_set_charging_disable(
@@ -4417,7 +4473,7 @@ static void oplus_chg_wls_update_track_info(struct oplus_chg_wls *wls_dev,
 			"magcvr=%d,verify_by_aes=%d,tx_manu_id=%d,"
 			"vendor_id=0x%x,product_id=0x%x,last_cep=%d,"
 			"epp_to_bpp_connect_time=%lums,bt_connect=%d,bt_incar=%d,"
-			"bt_car+=%d,bt_name=%s,ldo_on=%d,max_vrect=%d" "%s",
+			"bt_car+=%d,bt_type=%d,bt_name=%s,ldo_on=%d,max_vrect=%d" "%s",
 			trx_version, rx_version, wls_status->adapter_type,
 			wls_status->adapter_id, wls_status->fastchg_started, wls_status->vout_mv,
 			wls_status->iout_ma, wls_status->break_count, wls_status->trx_err,
@@ -4426,8 +4482,8 @@ static void oplus_chg_wls_update_track_info(struct oplus_chg_wls *wls_dev,
 			wls_dev->magcvr_status, wls_status->verify_by_aes, wls_status->tx_manu_id,
 			wls_status->vendor_id, wls_status->product_id, wls_status->last_cep,
 			wls_status->epp_to_bpp_connect_time, wls_dev->bt_info.connect, wls_dev->bt_info.incar,
-			wls_dev->bt_info.carlink, wls_dev->bt_info.name, wls_status->track_record.ldo_on,
-			wls_status->track_record.max_vrect, v30_info_buf);
+			wls_dev->bt_info.carlink, wls_dev->bt_info.bttype, wls_dev->bt_info.name,
+			wls_status->track_record.ldo_on, wls_status->track_record.max_vrect, v30_info_buf);
 		chg_info("%s\n", crux_info);
 	}
 }
@@ -4621,10 +4677,10 @@ static int oplus_chg_wls_set_trx_enable(struct oplus_chg_wls *wls_dev, bool en)
 			goto out;
 		if (wls_status->trx_rxac == true)
 			vote(wls_dev->rx_disable_votable, RXAC_VOTER, true, 1, false);
-		cancel_delayed_work_sync(&wls_dev->wls_trx_sm_work);
 		oplus_chg_wls_rx_set_trx_start(wls_dev->wls_rx->rx_ic, false);
 		if (!(wls_dev->pre_otg_enable && wls_dev->support_acdrv_no_ext_boost))
 			oplus_chg_wls_nor_set_boost_en(wls_dev->wls_nor->nor_ic, false);
+		cancel_delayed_work_sync(&wls_dev->wls_trx_sm_work);
 		wls_status->wls_type = OPLUS_CHG_WLS_UNKNOWN;
 		wls_status->trx_present = false;
 		pre_trx_online = wls_status->trx_online;
@@ -4724,6 +4780,7 @@ static enum oplus_chg_temp_region oplus_chg_wls_get_temp_region(struct oplus_chg
 		temp_region = BATT_TEMP_COLD;
 		break;
 	case TEMP_REGION_LITTLE_COLD:
+	case TEMP_REGION_LITTLE_COLD_HIGH:
 		temp_region = BATT_TEMP_LITTLE_COLD;
 		break;
 	case TEMP_REGION_COOL:
@@ -5047,6 +5104,10 @@ static void oplus_chg_wls_config(struct oplus_chg_wls *wls_dev)
 	int fcc_max_ma;
 	int icl_index;
 	static bool pre_temp_abnormal;
+	union mms_msg_data mms_data = { 0 };
+	int rc;
+	static bool shell_temp_ready = false;
+	int shell_temp = 0;
 
 	ffc_status = oplus_chg_wls_get_ffc_status(wls_dev);
 	if (ffc_status != FFC_DEFAULT) {
@@ -5071,10 +5132,23 @@ static void oplus_chg_wls_config(struct oplus_chg_wls *wls_dev)
 		icl_index = OPLUS_WLS_CHG_BATT_CL_LOW;
 
 	temp_region = oplus_chg_wls_get_temp_region(wls_dev);
+
+	if (wls_dev->comm_topic && !shell_temp_ready) {
+		rc = oplus_mms_get_item_data(wls_dev->comm_topic, COMM_ITEM_SHELL_TEMP, &mms_data, false);
+		if (rc < 0) {
+			chg_err("can't get shell temp data, rc=%d", rc);
+		} else {
+			shell_temp = mms_data.intval;
+			if (shell_temp != GAUGE_INVALID_TEMP)
+				shell_temp_ready = true;
+
+			chg_info("shell temp = %d, shell temp ready = %d\n", shell_temp, shell_temp_ready);
+		}
+	}
 	switch (temp_region) {
 	case BATT_TEMP_COLD:
 	case BATT_TEMP_HOT:
-		if (!pre_temp_abnormal) {
+		if (!pre_temp_abnormal && shell_temp_ready) {
 			pre_temp_abnormal = true;
 			wls_status->online_keep = true;
 			vote(wls_dev->rx_disable_votable, JEITA_VOTER, true, 1, false);
@@ -5414,12 +5488,12 @@ ssize_t oplus_chg_wls_rx_disable_store(struct oplus_mms *mms, const char *buf, s
 	return count;
 }
 
-#define BT_INFO_PARAM_NUM	4
 ssize_t oplus_chg_wls_bt_info_store(struct oplus_mms *mms, const char *buf, size_t count)
 {
 	struct oplus_chg_wls *wls_dev = NULL;
 	char test_buf[4] = { '\0' };
 	char *name_str = NULL;
+	int parsed_params = 0;
 
 	if (!buf) {
 		chg_err("buf is NULL\n");
@@ -5431,10 +5505,25 @@ ssize_t oplus_chg_wls_bt_info_store(struct oplus_mms *mms, const char *buf, size
 	}
 
 	wls_dev = oplus_mms_get_drvdata(mms);
-	if (sscanf(buf, "btconnect=%dbtincar=%dcarlink=%dbtname=%1s", &wls_dev->bt_info.connect,
-		&wls_dev->bt_info.incar, &wls_dev->bt_info.carlink, test_buf) != BT_INFO_PARAM_NUM) {
-		chg_err("buf format error\n");
-		return -EINVAL;
+	parsed_params = sscanf(buf, "btconnect=%dbtincar=%dcarlink=%dbttype=%dbtname=%1s",
+	                      &wls_dev->bt_info.connect,
+	                      &wls_dev->bt_info.incar,
+	                      &wls_dev->bt_info.carlink,
+	                      &wls_dev->bt_info.bttype,
+	                      test_buf);
+
+	if (parsed_params != 5) {
+		parsed_params = sscanf(buf, "btconnect=%dbtincar=%dcarlink=%dbtname=%1s",
+		                       &wls_dev->bt_info.connect,
+		                       &wls_dev->bt_info.incar,
+		                       &wls_dev->bt_info.carlink,
+		                       test_buf);
+		if (parsed_params == 4) {
+			wls_dev->bt_info.bttype = 0;
+		} else {
+			chg_err("buf format error\n");
+			return -EINVAL;
+		}
 	}
 	name_str = strstr(buf, "btname=");
 	if (name_str) {
@@ -5442,8 +5531,8 @@ ssize_t oplus_chg_wls_bt_info_store(struct oplus_mms *mms, const char *buf, size
 		memset(wls_dev->bt_info.name, '\0', sizeof(wls_dev->bt_info.name));
 		strncpy(wls_dev->bt_info.name, name_str, sizeof(wls_dev->bt_info.name) - 1);
 	}
-	chg_info("connect[%d], incar[%d], car+[%d], name[%s]\n", wls_dev->bt_info.connect, wls_dev->bt_info.incar,
-		wls_dev->bt_info.carlink, wls_dev->bt_info.name);
+	chg_info("connect[%d], incar[%d], car+[%d], bttype[%d], name[%s]\n", wls_dev->bt_info.connect, wls_dev->bt_info.incar,
+		wls_dev->bt_info.carlink, wls_dev->bt_info.bttype, wls_dev->bt_info.name);
 
 	return count;
 }
@@ -5596,6 +5685,7 @@ static void oplus_chg_wls_usb_int_work(struct work_struct *work)
 	struct oplus_chg_wls *wls_dev = container_of(dwork, struct oplus_chg_wls, usb_int_work);
 	struct oplus_chg_wls_status *wls_status = &wls_dev->wls_status;
 
+	mutex_lock(&wls_dev->usb_lock);
 	if (wls_dev->usb_present) {
 		oplus_chg_wls_rx_set_rx_mode_safety(wls_dev, OPLUS_CHG_WLS_RX_MODE_UNKNOWN);
 		vote(wls_dev->rx_disable_votable, USB_VOTER, true, 1, false);
@@ -5633,6 +5723,7 @@ static void oplus_chg_wls_usb_int_work(struct work_struct *work)
 				vote(wls_dev->insert_disable_votable, USB_VOTER, false, 0, false);
 		}
 	}
+	mutex_unlock(&wls_dev->usb_lock);
 }
 
 static void oplus_chg_wls_vac_int_work(struct work_struct *work)
@@ -5641,6 +5732,7 @@ static void oplus_chg_wls_vac_int_work(struct work_struct *work)
 	struct oplus_chg_wls *wls_dev = container_of(dwork, struct oplus_chg_wls, vac_int_work);
 	struct oplus_chg_wls_status *wls_status = &wls_dev->wls_status;
 
+	mutex_lock(&wls_dev->usb_lock);
 	if (wls_dev->vac_present) {
 		vote(wls_dev->rx_disable_votable, USB_VOTER, true, 1, false);
 		if (wls_status->wls_type == OPLUS_CHG_WLS_TRX)
@@ -5666,6 +5758,7 @@ static void oplus_chg_wls_vac_int_work(struct work_struct *work)
 			vote(wls_dev->insert_disable_votable, USB_VOTER, false, 0, false);
 		}
 	}
+	mutex_unlock(&wls_dev->usb_lock);
 }
 
 #define OPLUS_CHG_WLS_START_DETECT_CNT 10
@@ -5760,6 +5853,7 @@ static void oplus_chg_wls_connect_work(struct work_struct *work)
 			skin_temp = 250;
 		}
 		wls_dev->high_temp_track.wls_start_time = jiffies;
+		oplus_wls_sub_btb_connnect_check(wls_dev);
 		schedule_delayed_work(&wls_dev->wls_monitor_work, msecs_to_jiffies(OPLUS_CHG_WLS_MONITOR_DELAY));
 	} else {
 		chg_err("!!!!!wls disconnect <<<<<<<<<<<<<<<<<<<<<<<<<<\n");
@@ -6700,6 +6794,7 @@ static int oplus_chg_wls_fastchg_restart_check(struct oplus_chg_wls *wls_dev)
 	int ibat_ma = 0;
 	int vbat_mv = 0;
 	int rc;
+	static int cnt = 0;
 
 	if (wls_status->switch_quiet_mode || !wls_dev->batt_charge_enable)
 		return -EPERM;
@@ -6725,7 +6820,16 @@ static int oplus_chg_wls_fastchg_restart_check(struct oplus_chg_wls *wls_dev)
 	rc = oplus_chg_wls_get_vbat(wls_dev, &vbat_mv);
 	if ((rc < 0) || vbat_mv >= dynamic_cfg->fastch_max_vbat_mv[temp_region]) {
 		chg_err("can't get vbat, or vbat is too high rc=%d\n", rc);
+		cnt = 0;
 		return -EPERM;
+	} else if (vbat_mv < dynamic_cfg->fastch_max_vbat_mv[temp_region] && cnt < 1) {
+		cnt++;
+		chg_err("vbat is lower than fastch_max_vbat_mv, vbat_mv=%d, cnt=%d,"
+			"fastch_max_vbat_mv=%d\n", vbat_mv, cnt,
+			dynamic_cfg->fastch_max_vbat_mv[temp_region]);
+		return -EPERM;
+	} else {
+		cnt = 0;
 	}
 
 	rc = oplus_chg_wls_get_ibat(wls_dev, &ibat_ma);
@@ -8153,6 +8257,36 @@ static int oplus_chg_wls_rx_exit_state_epp_plus(struct oplus_chg_wls *wls_dev)
 	return 0;
 }
 
+static void oplus_chg_wls_set_fastchg_started(
+	struct oplus_chg_wls *wls_dev, bool fastchg_started)
+{
+	struct oplus_chg_wls_status *wls_status = &wls_dev->wls_status;
+	struct mms_msg *msg;
+	int rc;
+
+	if (wls_status->fastchg_started == fastchg_started)
+		return;
+
+	wls_status->fastchg_started = fastchg_started;
+
+	if (wls_dev->wls_topic == NULL) {
+		chg_err("wls_topic not ready\n");
+		return;
+	}
+
+	msg = oplus_mms_alloc_msg(
+		MSG_TYPE_ITEM, MSG_PRIO_MEDIUM, WLS_ITEM_FASTCHG_STATUS);
+	if (msg == NULL) {
+		chg_err("alloc msg error\n");
+		return;
+	}
+	rc = oplus_mms_publish_msg(wls_dev->wls_topic, msg);
+	if (rc < 0) {
+		chg_err("publish wls fastchg status msg error, rc=%d\n", rc);
+		kfree(msg);
+	}
+}
+
 #define CP_OPEN_OFFSET		100
 #define CURR_ERR_COUNT_MAX	200
 static int oplus_chg_wls_rx_enter_state_fast(struct oplus_chg_wls *wls_dev)
@@ -8412,7 +8546,7 @@ static int oplus_chg_wls_rx_enter_state_fast(struct oplus_chg_wls *wls_dev)
 			vote(wls_dev->fcc_votable, MAX_VOTER, true, WLS_FASTCHG_CURR_15W_MAX_MA * factor, false);
 		}
 		wls_status->state_sub_step = 0;
-		wls_status->fastchg_started = true;
+		oplus_chg_wls_set_fastchg_started(wls_dev, true);
 		wls_status->fastchg_level_init_temp = 0;
 		wls_status->wait_cep_stable = true;
 		wls_status->fastchg_retry_count = 0;
@@ -10062,9 +10196,16 @@ static void oplus_chg_wls_rx_restore_work(struct work_struct *work)
 {
 	struct delayed_work *dwork = to_delayed_work(work);
 	struct oplus_chg_wls *wls_dev = container_of(dwork, struct oplus_chg_wls, rx_restore_work);
+	enum oplus_chg_temp_region temp_region;
 
+	temp_region = oplus_chg_wls_get_temp_region(wls_dev);
 	vote(wls_dev->rx_disable_votable, JEITA_VOTER, false, 0, false);
-	vote(wls_dev->nor_icl_votable, JEITA_VOTER, true, WLS_CURR_JEITA_CHG_MA, true);
+	if (temp_region <= BATT_TEMP_COLD || temp_region >= BATT_TEMP_HOT) {
+		chg_info("temp region = %d, still abnormal need limit icl\n", temp_region);
+		vote(wls_dev->nor_icl_votable, JEITA_VOTER, true, WLS_CURR_JEITA_CHG_MA, true);
+	} else {
+		vote(wls_dev->nor_icl_votable, JEITA_VOTER, false, 0, true);
+	}
 }
 
 static void oplus_chg_wls_rx_iic_restore_work(struct work_struct *work)
@@ -10537,6 +10678,7 @@ static const char * const norchg_strategy_mode[] = {
 static const char * const norchg_strategy_temp[] = {
 	[TEMP_REGION_COLD]	= "wls_temp_cold",
 	[TEMP_REGION_LITTLE_COLD]	= "wls_temp_little_cold",
+	[TEMP_REGION_LITTLE_COLD_HIGH]	= "wls_temp_little_cold_high",
 	[TEMP_REGION_COOL]	= "wls_temp_cool",
 	[TEMP_REGION_LITTLE_COOL]	= "wls_temp_little_cool",
 	[TEMP_REGION_PRE_NORMAL]	= "wls_temp_pre_normal",
@@ -10789,8 +10931,17 @@ static int read_norchg_strategy_from_node(struct device_node *node, const char *
 			for (k = TEMP_REGION_LITTLE_COLD; k < TEMP_REGION_HOT; k++) {
 				rc = of_property_count_elems_of_size(norchg_vol_node, norchg_strategy_temp[k], sizeof(u32));
 				if (rc < 0) {
-					chg_err("Count %s failed, rc=%d\n", norchg_strategy_temp[k], rc);
-					return rc;
+					if (k > 0 && k == TEMP_REGION_LITTLE_COLD_HIGH) {
+						chg_info("%s node not found, copy little_cold paras\n", norchg_strategy_temp[k]);
+						ranges->norchg_step[i][j][k].max_step = ranges->norchg_step[i][j][k - 1].max_step;
+						memmove(ranges->norchg_step[i][j][k].norchg_step,
+						       ranges->norchg_step[i][j][k - 1].norchg_step,
+						       sizeof(ranges->norchg_step[i][j][k].norchg_step));
+						continue;
+					} else {
+						chg_err("Count %s failed, rc=%d\n", norchg_strategy_temp[k], rc);
+						return rc;
+					}
 				}
 				length = rc;
 
@@ -11821,6 +11972,13 @@ static int oplus_chg_wls_parse_dt(struct oplus_chg_wls *wls_dev)
 		chg_info("camera_icl_limit: %d\n", dynamic_cfg->camera_icl_limit);
 	}
 
+	rc = of_property_read_u32(node, "oplus,camera_handle_icl_limit", &dynamic_cfg->camera_handle_icl_limit);
+	if (rc < 0) {
+		chg_info("oplus,camera_handle_icl_limit reading failed, rc=%d\n", rc);
+		dynamic_cfg->camera_handle_icl_limit = 0;
+	} else {
+		chg_info("camera_handle_icl_limit: %d\n", dynamic_cfg->camera_handle_icl_limit);
+	}
 
 	return 0;
 }
@@ -12237,10 +12395,10 @@ static ssize_t oplus_chg_wls_proc_user_sleep_mode_write(struct file *file,
 		vote(wls_dev->nor_icl_votable, WLS_CAMERA_MODE_VOTER, false, 0, false);
 	} else if (pmw_pulse == WLS_CAMERA_MODE && wls_dev->rx_protocol_version >= WLS_RX_PROTOCOL_VERSION_30) {
 		wls_dev->wls_status.track_record.pmw_scenarios = pmw_pulse;
-		if (wls_dev->dynamic_config.camera_icl_limit > 0 && wls_dev->mms_info.rx_present == 1 &&
+		if (wls_dev->mms_info.rx_present == 1 &&
 		    wls_dev->wls_status.wls_type == OPLUS_CHG_WLS_BPP)
-			vote(wls_dev->nor_icl_votable, WLS_CAMERA_MODE_VOTER, true,
-			     wls_dev->dynamic_config.camera_icl_limit, false);
+			oplus_chg_wls_cam_scene_icl_limit(wls_dev);
+
 		if (wls_dev->force_rx_mode == OPLUS_CHG_WLS_RX_MODE_BPP) {
 			cancel_delayed_work(&wls_dev->rx_mode_check_work);
 			schedule_delayed_work(&wls_dev->rx_mode_check_work,
@@ -12784,8 +12942,6 @@ static void oplus_chg_wls_gauge_subs_callback(struct mms_subscribe *subs,
 {
 	struct oplus_chg_wls *wls_dev = subs->priv_data;
 	union mms_msg_data data = { 0 };
-	int btb_abnormal_current;
-	int rc;
 
 	switch (type) {
 	case MSG_TYPE_TIMER:
@@ -12801,23 +12957,7 @@ static void oplus_chg_wls_gauge_subs_callback(struct mms_subscribe *subs,
 	case MSG_TYPE_ITEM:
 		switch (id) {
 		case GAUGE_ITEM_SUB_BTB_STATE:
-			rc = oplus_mms_get_item_data(wls_dev->gauge_topic, id,
-						     &data, false);
-			if (rc < 0) {
-				chg_err("can't get GAUGE_ITEM_SUB_BTB_STATE data, rc=%d\n",
-					 rc);
-			} else {
-				if (data.intval == BATT_BTB_STATE_NOT_CONNECT) {
-					btb_abnormal_current = oplus_gauge_get_sub_btb_curr_limit(wls_dev->gauge_topic);
-					chg_debug("sub_btb abnormal, max curr set %d\n", btb_abnormal_current);
-					if (btb_abnormal_current > 0)
-						vote(wls_dev->fcc_votable, BAD_SUB_BTB_VOTER, true,
-						     btb_abnormal_current, false);
-				} else if (data.intval == BATT_BTB_STATE_CONNECT) {
-					vote(wls_dev->fcc_votable, BAD_SUB_BTB_VOTER, false,
-					     0, false);
-				}
-			}
+			oplus_wls_sub_btb_connnect_check(wls_dev);
 			break;
 		default:
 			break;
@@ -12924,11 +13064,13 @@ static void oplus_chg_wls_wired_subs_callback(struct mms_subscribe *subs,
 			oplus_mms_get_item_data(wls_dev->wired_topic, id, &data, false);
 			if (data.intval) {
 				chg_info("usb online\n");
-				wls_dev->usb_present = true;
-				if (!wls_dev->vac_present)
-					schedule_delayed_work(&wls_dev->usb_int_work, 0);
-				if (is_batt_psy_available(wls_dev))
-					power_supply_changed(wls_dev->batt_psy);
+				if (!wls_dev->usb_present) {
+					wls_dev->usb_present = true;
+					if (!wls_dev->vac_present)
+						schedule_delayed_work(&wls_dev->usb_int_work, 0);
+					if (is_batt_psy_available(wls_dev))
+						power_supply_changed(wls_dev->batt_psy);
+				}
 			} else {
 				chg_info("usb offline\n");
 				wls_dev->usb_present = false;
@@ -13160,6 +13302,7 @@ static void oplus_chg_wls_temp_region_update_work(struct work_struct *work)
 		else
 			wls_dev->wls_status.fastchg_level = 0;
 	}
+
 	oplus_chg_wls_config(wls_dev);
 }
 
@@ -13350,6 +13493,13 @@ static int oplus_chg_wls_epp_force_to_bpp_loop_check(struct oplus_chg_wls *wls_d
 	int rc = 0;
 	enum oplus_chg_wls_rx_mode rx_mode;
 
+#ifndef CONFIG_DISABLE_OPLUS_FUNCTION
+	if (get_eng_version() == HIGH_TEMP_AGING || get_eng_version() == FACTORY) {
+		chg_err("factory/high temp version, skip epp force bpp\n");
+		return rc;
+	}
+#endif
+
 	oplus_chg_wls_rx_get_rx_mode(wls_dev->wls_rx->rx_ic, &rx_mode);
 	if (rc < 0) {
 		chg_err("get rx mode error, rc=%d\n", rc);
@@ -13396,8 +13546,8 @@ static void oplus_chg_wls_epp_force_to_bpp_check_handler(struct oplus_chg_wls *w
 		return;
 
 #ifndef CONFIG_DISABLE_OPLUS_FUNCTION
-	if (get_eng_version() != OEM_RELEASE) {
-		chg_err("get_eng_version is not OEM_RELEASE\n");
+	if (get_eng_version() == HIGH_TEMP_AGING || get_eng_version() == FACTORY) {
+		chg_err("factory/high temp version, skip epp force bpp\n");
 		return;
 	}
 #endif
@@ -13481,10 +13631,8 @@ static void oplus_chg_wls_present_handler_work(struct work_struct *work)
 	if (wls_dev->mms_info.rx_present == 1) {
 		if (wls_dev->force_rx_mode == OPLUS_CHG_WLS_RX_MODE_BPP) {
 			vote(wls_dev->rx_disable_votable, CONNECT_VOTER, false, 0, false);
-			if (wls_dev->dynamic_config.camera_icl_limit > 0 &&
-			    (get_client_vote(wls_dev->force_bpp_mode_votable, WLS_CAMERA_MODE_VOTER) > 0))
-				vote(wls_dev->nor_icl_votable, WLS_CAMERA_MODE_VOTER, true,
-				     wls_dev->dynamic_config.camera_icl_limit, false);
+			if (get_client_vote(wls_dev->force_bpp_mode_votable, WLS_CAMERA_MODE_VOTER) > 0)
+				oplus_chg_wls_cam_scene_icl_limit(wls_dev);
 		}
 		oplus_chg_wls_rx_set_rx_mode_safety(wls_dev, OPLUS_CHG_WLS_RX_MODE_UNKNOWN);
 		oplus_chg_wls_rx_get_vrect(wls_dev->wls_rx->rx_ic, &wls_dev->wls_status.track_record.max_vrect);
@@ -15305,6 +15453,7 @@ static int oplus_chg_wls_driver_probe(struct platform_device *pdev)
 	mutex_init(&wls_dev->update_data_lock);
 	mutex_init(&wls_dev->tx_switch_lock);
 	mutex_init(&wls_dev->trx_enable_lock);
+	mutex_init(&wls_dev->usb_lock);
 	init_waitqueue_head(&wls_dev->read_wq);
 
 	wls_dev->rx_wake_lock = wakeup_source_register(wls_dev->dev, "rx_wake_lock");

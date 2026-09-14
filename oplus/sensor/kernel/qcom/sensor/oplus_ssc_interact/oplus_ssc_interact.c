@@ -115,9 +115,9 @@ static void ssc_interactive_set_blank_mode(enum panel_event_notifier_tag panel_t
 	} else {
 		ssc_cxt->a_info.secondary_blank_mode = blank_mode;
 	}
-	if (ssc_cxt->a_info.primary_blank_mode == 1) {
+	if (ssc_cxt->a_info.primary_blank_mode == 1 || ssc_cxt->a_info.primary_blank_mode == 3) {
 		brightness = ssc_cxt->last_primary_bri;
-	} else if (ssc_cxt->a_info.secondary_blank_mode == 1) {
+	} else if (ssc_cxt->a_info.secondary_blank_mode == 1 || ssc_cxt->a_info.secondary_blank_mode == 3) {
 		brightness = ssc_cxt->last_second_bri;
 	} else if (panel_tag == PANEL_EVENT_NOTIFICATION_PRIMARY) {
 		brightness = ssc_cxt->last_primary_bri;
@@ -617,6 +617,17 @@ static void lcdinfo_callback(enum panel_event_notifier_tag panel_tag,
 			ssc_interactive_set_blank_mode(panel_tag, SCREEN_OFF);
 		}
 		break;
+	case DRM_PANEL_EVENT_BLANK_LP:
+#if IS_ENABLED(CONFIG_OPLUS_SENSOR_FB_QC)
+		if (g_ssc_cxt->sup_power_fb) {
+			ssc_fb_set_screen_status(SCREEN_LP);
+		}
+#endif
+		if (g_ssc_cxt->report_blank_mode) {
+			ssc_interactive_set_blank_mode(panel_tag, SCREEN_LP);
+		}
+		break;
+
 	case DRM_PANEL_EVENT_PULSE_MODE:
 		if (g_ssc_cxt->need_lb_algo) {
 			ssc_interactive_set_pulse_mode(notification->notif_data.data);
@@ -974,7 +985,7 @@ static int __init ssc_interactive_init(void)
 		ssc_cxt->notify_work_regiseted = false;
 		g_ssc_cxt->notify_work_regiseted_second = false;
 		INIT_DELAYED_WORK(&ssc_cxt->regiseter_lcd_notify_work, ssc_regiseter_lcd_notify_work);
-		schedule_delayed_work(&ssc_cxt->regiseter_lcd_notify_work, msecs_to_jiffies(5000));
+		schedule_delayed_work(&ssc_cxt->regiseter_lcd_notify_work, msecs_to_jiffies(2500));
 #else
 		ssc_cxt->nb.notifier_call = lcdinfo_callback;
 		register_lcdinfo_notifier(&ssc_cxt->nb);
