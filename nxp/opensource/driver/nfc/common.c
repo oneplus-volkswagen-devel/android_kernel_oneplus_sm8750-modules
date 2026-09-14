@@ -56,7 +56,7 @@ int nfc_parse_dt(struct device *dev, struct platform_configs *nfc_configs,
 			       nfc_gpio->irq);
 			return nfc_gpio->irq;
 		}
-		pr_info("NxpDrv: %s: irq %d\n", __func__, nfc_gpio->irq);
+		pr_err("NxpDrv: %s: irq %d\n", __func__, nfc_gpio->irq);
 //#if IS_ENABLED(CONFIG_NXP_NFC_VBAT_MONITOR)
 		nfc_gpio->vbat_irq = -EINVAL;
 		nfc_gpio->vbat_irq =
@@ -95,7 +95,7 @@ int nfc_parse_dt(struct device *dev, struct platform_configs *nfc_configs,
 	}else
 		nfc_configs->CNSS_NFC_HW_SECURE_ENABLE = true;
 #endif
-	pr_info("NxpDrv: %s: irq %d, ven %d, dwl %d, clkreq %d \n", __func__, nfc_gpio->irq, nfc_gpio->ven,
+	pr_err("NxpDrv: %s: irq %d, ven %d, dwl %d, clkreq %d \n", __func__, nfc_gpio->irq, nfc_gpio->ven,
 		nfc_gpio->dwl_req, nfc_gpio->clkreq);
 
 	/* optional property */
