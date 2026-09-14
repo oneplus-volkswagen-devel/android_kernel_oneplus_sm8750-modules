@@ -27,6 +27,8 @@
 #define SOC_TABLE_SIZE ((MAX_SOC) + 1)
 
 #define MIN_CHG_SPLIT_SOC 20
+#define TYPICAL_DISCHG_SPLIT_SOC 30
+#define MAX_DISCHG_SPLIT_SOC 50
 #define MAX_CHG_SPLIT_SOC MAX_SOC
 
 #define MAX_DISCHG_DELTA_SOC 5
@@ -43,6 +45,7 @@
 
 #define MIN_RESERVE 0
 #define MAX_RESERVE 1000 /* 10% */
+#define TYPICAL_RESERVE 200 /* 2% */
 
 #define PERCENT_SCALE 100
 #define FULL_SCALE (100 * (PERCENT_SCALE))
@@ -106,6 +109,10 @@ struct bs_strategy {
 	struct delayed_work map_update_work;
 	bool map_update_pending;
 	bool last_chg_online;
+
+	bool dts_update_secondary_smooth_map;
+	bool rus_update_secondary_smooth_map;
+	bool rus_set;
 
 	struct kfifo track_fifo;
 	char *track_cache;
@@ -750,9 +757,14 @@ static void handle_chg_map_smooth_lt_split(struct bs_strategy *bs, struct reserv
 			cfg->chg_split_soc * PERCENT_SCALE,
 			bs->smooth_map[bs->smooth_soc], bs->smooth_map[cfg->chg_split_soc] - cfg->chg_reserve);
 
-		/* [split_soc+1,100] -> [map[split_soc],FULL_SCALE] */
-		smooth_soc_to_soc_centi(bs, cfg->chg_split_soc + 1, MAX_SOC, cfg->chg_split_soc * PERCENT_SCALE,
-			FULL_SCALE, bs->smooth_map[cfg->chg_split_soc], FULL_SCALE);
+		if (cfg->chg_reserve < 0 && bs->dts_update_secondary_smooth_map)
+			/* [split_soc+1,100] -> [map[split_soc],FULL_SCALE-200] */
+			smooth_soc_to_soc_centi(bs, cfg->chg_split_soc + 1, MAX_SOC, cfg->chg_split_soc * PERCENT_SCALE,
+				FULL_SCALE, bs->smooth_map[cfg->chg_split_soc], FULL_SCALE - TYPICAL_RESERVE);
+		else
+			/* [split_soc+1,100] -> [map[split_soc],FULL_SCALE] */
+			smooth_soc_to_soc_centi(bs, cfg->chg_split_soc + 1, MAX_SOC, cfg->chg_split_soc * PERCENT_SCALE,
+				FULL_SCALE, bs->smooth_map[cfg->chg_split_soc], FULL_SCALE);
 	} else {
 		/* [smooth_soc+1,100] -> [map[smooth_soc],FULL_SCALE] */
 		smooth_soc_to_soc_centi(bs, bs->smooth_soc + 1, MAX_SOC, bs->smooth_soc * PERCENT_SCALE,
@@ -827,6 +839,92 @@ static bool is_dischg_no_reserve(struct bs_strategy *bs)
 		bs->smooth_soc > bs->soc + MAX_DISCHG_DELTA_SOC);
 }
 
+/* Handle the case when smooth_soc equals MAX_SOC */
+static void bs_handle_dischg_smooth_eq_max(struct bs_strategy *bs, struct reserve_cfg *cfg,
+					   int extra_reserve, struct bs_track *track)
+{
+	track->type = (uint8_t)MAP_TYPE_DISCHG_SMOOTH_EQ_MAX;
+	track->dischg_smooth_eq_max.smooth_soc_centi = (uint16_t)bs->smooth_soc_centi;
+	track->dischg_smooth_eq_max.soc_centi = (uint16_t)bs->soc_centi;
+	track->dischg_smooth_eq_max.dischg_reserve = (uint16_t)cfg->dischg_reserve;
+	track->dischg_smooth_eq_max.extra_reserve = (uint16_t)extra_reserve;
+
+	/* [0,100] -> [0,FULL_SCALE-dischg_reserve-full_reserve] */
+	smooth_soc_to_soc_centi(bs, 0, MAX_SOC, 0, bs->smooth_soc_centi,
+		0, bs->soc_centi - cfg->dischg_reserve - extra_reserve);
+}
+
+/* Handle the case when battery is full but smooth_soc is not MAX_SOC */
+static void bs_handle_dischg_full(struct bs_strategy *bs, struct reserve_cfg *cfg,
+				  int extra_reserve, struct bs_track *track)
+{
+	track->type = (uint8_t)MAP_TYPE_DISCHG_FULL;
+	track->dischg_full.soc_centi = (uint16_t)bs->soc_centi;
+	track->dischg_full.dischg_reserve = (uint16_t)cfg->dischg_reserve;
+	track->dischg_full.extra_reserve = (uint16_t)extra_reserve;
+
+	/* [0,100] -> [0,FULL_SCALE-dischg_reserve-full_reserve] */
+	smooth_soc_to_soc_centi(bs, 0, MAX_SOC, 0, FULL_SCALE,
+		0, max(bs->soc_centi, MIN_FULL_SOC) - cfg->dischg_reserve - extra_reserve);
+}
+
+/* Handle the case when no reserve is needed for discharge */
+static void bs_handle_dischg_no_reserve(struct bs_strategy *bs, struct bs_track *track)
+{
+	track->type = (uint8_t)MAP_TYPE_DISCHG_NO_RESERVE;
+	track->dischg_no_reserve.smooth_soc = (uint8_t)bs->smooth_soc;
+	track->dischg_no_reserve.smooth_soc_centi = (uint16_t)bs->smooth_soc_centi;
+	track->dischg_no_reserve.soc_centi = (uint16_t)bs->soc_centi;
+	track->dischg_no_reserve.soc = (uint8_t)bs->soc;
+
+	chg_info("soc too low or smooth_soc-soc too large [%d %d]\n", bs->soc, bs->smooth_soc);
+	if (bs->smooth_soc == MIN_SOC)
+		bs->smooth_map[MIN_SOC] = 0;
+	else
+		/* [0,smooth_soc] -> [0,soc_centi] */
+		smooth_soc_to_soc_centi(bs, 0, bs->smooth_soc, 0, bs->smooth_soc_centi,
+			0, bs->soc_centi);
+
+	/* [smooth_soc+1,100] -> [map[smooth_soc], FULL_SCALE] */
+	smooth_soc_to_soc_centi(bs, bs->smooth_soc + 1, MAX_SOC,
+		bs->smooth_soc * PERCENT_SCALE, FULL_SCALE,
+		bs->smooth_map[bs->smooth_soc], FULL_SCALE);
+}
+
+/* Handle the general discharge case */
+static void bs_handle_dischg_other(struct bs_strategy *bs, struct reserve_cfg *cfg,
+				   struct bs_track *track)
+{
+	track->type = (uint8_t)MAP_TYPE_DISCHG_OTHER;
+	track->dischg_other.smooth_soc = (uint8_t)bs->smooth_soc;
+	track->dischg_other.smooth_sub1_upper = (uint16_t)bs->smooth_map[bs->smooth_soc - 1];
+	track->dischg_other.smooth_upper = (uint16_t)bs->smooth_map[bs->smooth_soc];
+	track->dischg_other.dischg_reserve = (uint16_t)cfg->dischg_reserve;
+
+	/* [0,smooth_soc-1] -> [0, map[smooth_soc-1]-dischg_reserve] */
+	smooth_soc_to_soc_centi(bs, 0, bs->smooth_soc - 1, 0, (bs->smooth_soc -1) * PERCENT_SCALE,
+		0, bs->smooth_map[bs->smooth_soc - 1] - cfg->dischg_reserve);
+
+	/* map[smooth_soc] = map[smooth_soc] */
+
+	/* [smooth_soc+1, 100] -> [map[smooth_soc], FULL_SCALE] */
+	smooth_soc_to_soc_centi(bs, bs->smooth_soc + 1, MAX_SOC, bs->smooth_soc * PERCENT_SCALE, FULL_SCALE,
+		bs->smooth_map[bs->smooth_soc], FULL_SCALE);
+}
+
+static void bs_update_dischg_map_secondary(struct bs_strategy *bs)
+{
+	if (!is_dischg_no_reserve(bs) && bs->smooth_soc > MAX_DISCHG_SPLIT_SOC) {
+		/* [31, smooth_soc - 1] -> [map[31]-200, map[bs->smooth_soc - 1]] */
+		smooth_soc_to_soc_centi(bs, TYPICAL_DISCHG_SPLIT_SOC + 1, bs->smooth_soc - 1, (TYPICAL_DISCHG_SPLIT_SOC + 1) * PERCENT_SCALE,
+			(bs->smooth_soc - 1) * PERCENT_SCALE, bs->smooth_map[TYPICAL_DISCHG_SPLIT_SOC + 1] - TYPICAL_RESERVE,
+			bs->smooth_map[bs->smooth_soc - 1]);
+		/* [0, 31] -> [0, map[31]] */
+		smooth_soc_to_soc_centi(bs, 0, TYPICAL_DISCHG_SPLIT_SOC + 1, 0, (TYPICAL_DISCHG_SPLIT_SOC + 1) * PERCENT_SCALE,
+			0, bs->smooth_map[TYPICAL_DISCHG_SPLIT_SOC + 1]);
+	}
+}
+
 static void bs_update_dischg_map(struct bs_strategy *bs)
 {
 	struct reserve_cfg *cfg;
@@ -843,60 +941,20 @@ static void bs_update_dischg_map(struct bs_strategy *bs)
 		extra_reserve = cfg->full_reserve;
 
 	if (bs->smooth_soc == MAX_SOC) {
-		track.type = (uint8_t)MAP_TYPE_DISCHG_SMOOTH_EQ_MAX;
-		track.dischg_smooth_eq_max.smooth_soc_centi = (uint16_t)bs->smooth_soc_centi;
-		track.dischg_smooth_eq_max.soc_centi = (uint16_t)bs->soc_centi;
-		track.dischg_smooth_eq_max.dischg_reserve = (uint16_t)cfg->dischg_reserve;
-		track.dischg_smooth_eq_max.extra_reserve = (uint16_t)extra_reserve;
-
-		/* [0,100] -> [0,FULL_SCALE-dischg_reserve-full_reserve] */
-		smooth_soc_to_soc_centi(bs, 0, MAX_SOC, 0, bs->smooth_soc_centi,
-			0, bs->soc_centi - cfg->dischg_reserve - extra_reserve);
+		bs_handle_dischg_smooth_eq_max(bs, cfg, extra_reserve, &track);
 	} else if (bs->chg_full) {
-		track.type = (uint8_t)MAP_TYPE_DISCHG_FULL;
-		track.dischg_full.soc_centi = (uint16_t)bs->soc_centi;
-		track.dischg_full.dischg_reserve = (uint16_t)cfg->dischg_reserve;
-		track.dischg_full.extra_reserve = (uint16_t)extra_reserve;
-
-		/* [0,100] -> [0,FULL_SCALE-dischg_reserve-full_reserve] */
-		smooth_soc_to_soc_centi(bs, 0, MAX_SOC, 0, FULL_SCALE,
-			0, max(bs->soc_centi, MIN_FULL_SOC) - cfg->dischg_reserve - extra_reserve);
+		bs_handle_dischg_full(bs, cfg, extra_reserve, &track);
 	} else if (is_dischg_no_reserve(bs)) {
-		track.type = (uint8_t)MAP_TYPE_DISCHG_NO_RESERVE;
-		track.dischg_no_reserve.smooth_soc = (uint8_t)bs->smooth_soc;
-		track.dischg_no_reserve.smooth_soc_centi = (uint16_t)bs->smooth_soc_centi;
-		track.dischg_no_reserve.soc_centi = (uint16_t)bs->soc_centi;
-		track.dischg_no_reserve.soc = (uint8_t)bs->soc;
-
-		chg_info("soc too low or smooth_soc-soc too large [%d %d]\n", bs->soc, bs->smooth_soc);
-		if (bs->smooth_soc == MIN_SOC)
-			bs->smooth_map[MIN_SOC] = 0;
-		else
-			/* [0,smooth_soc] -> [0,soc_centi] */
-			smooth_soc_to_soc_centi(bs, 0, bs->smooth_soc, 0, bs->smooth_soc_centi,
-				0, bs->soc_centi);
-
-		/* [smooth_soc+1,100] -> [map[smooth_soc], FULL_SCALE] */
-		smooth_soc_to_soc_centi(bs, bs->smooth_soc + 1, MAX_SOC,
-			bs->smooth_soc * PERCENT_SCALE, FULL_SCALE,
-			bs->smooth_map[bs->smooth_soc], FULL_SCALE);
+		bs_handle_dischg_no_reserve(bs, &track);
 	} else {
-		track.type = (uint8_t)MAP_TYPE_DISCHG_OTHER;
-		track.dischg_other.smooth_soc = (uint8_t)bs->smooth_soc;
-		track.dischg_other.smooth_sub1_upper = (uint16_t)bs->smooth_map[bs->smooth_soc - 1];
-		track.dischg_other.smooth_upper = (uint16_t)bs->smooth_map[bs->smooth_soc];
-		track.dischg_other.dischg_reserve = (uint16_t)cfg->dischg_reserve;
-
-		/* [0,smooth_soc-1] -> [0, map[smooth_soc-1]-dischg_reserve] */
-		smooth_soc_to_soc_centi(bs, 0, bs->smooth_soc - 1, 0, (bs->smooth_soc -1) * PERCENT_SCALE,
-			0, bs->smooth_map[bs->smooth_soc - 1] - cfg->dischg_reserve);
-
-		/* map[smooth_soc] = map[smooth_soc] */
-
-		/* [smooth_soc+1, 100] -> [map[smooth_soc], FULL_SCALE] */
-		smooth_soc_to_soc_centi(bs, bs->smooth_soc + 1, MAX_SOC, bs->smooth_soc * PERCENT_SCALE, FULL_SCALE,
-			bs->smooth_map[bs->smooth_soc], FULL_SCALE);
+		bs_handle_dischg_other(bs, cfg, &track);
 	}
+
+	/* Re-update the map for the smooth_soc between 0 and smooth_soc-1 */
+	if (bs->rus_update_secondary_smooth_map)
+		bs_update_dischg_map_secondary(bs);
+	else if (bs->dts_update_secondary_smooth_map && !bs->rus_set)
+		bs_update_dischg_map_secondary(bs);
 
 	bs->smooth_map[MIN_SOC] = 0;
 	bs->smooth_map[MAX_SOC] = FULL_SCALE;
@@ -1268,6 +1326,9 @@ static int parse_reserve_config(struct device_node *node, struct bs_strategy *bs
 		return rc;
 	}
 
+	bs->dts_update_secondary_smooth_map =
+		of_property_read_bool(node, "oplus,enable_secondary_smooth_map_update");
+
 	for (i = 0; i < bs->cfg_count; i++) {
 		cfg = &bs->cfgs[i];
 
@@ -1385,6 +1446,9 @@ static struct oplus_chg_strategy *bs_strategy_alloc_by_node(struct device_node *
 	bs->last_chg_ref_centi = 0;
 	bs->last_chg_valid = false;
 	bs->chg_dis_delta_acc_centi = 0;
+	bs->rus_set = false;
+	bs->rus_update_secondary_smooth_map = false;
+
 	return &bs->strategy;
 free_battery_log:
 	kfree(bs->battery_log_cache);
@@ -1492,6 +1556,11 @@ static int bs_strategy_set_process_data(struct oplus_chg_strategy *strategy, con
 	} else if (sysfs_streq(type, "init_ui_soc")) {
 		bs->init_ui_soc = (int)arg;
 		bs_init_map(bs);
+	} else if (sysfs_streq(type, "rus_set")) {
+		bs->rus_set = true;
+		bs->rus_update_secondary_smooth_map = (bool)arg;
+		mutex_unlock(&bs->lock);
+		return 0;
 	} else {
 		mutex_unlock(&bs->lock);
 		return -ENOTSUPP;
@@ -1551,4 +1620,3 @@ int bs_strategy_register(void)
 {
 	return oplus_chg_strategy_register(&bs_strategy_desc);
 }
-

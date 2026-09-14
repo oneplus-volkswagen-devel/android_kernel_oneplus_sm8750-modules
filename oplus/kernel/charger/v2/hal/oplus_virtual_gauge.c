@@ -2908,7 +2908,11 @@ static int oplus_chg_vg_set_batt_deep_term_volt(struct oplus_chg_ic_dev *ic_dev,
 {
 	struct oplus_virtual_gauge_ic *chip;
 	int i;
-	int rc = 0;
+	int rc = -ENOTSUPP;
+	bool support_found = false;
+	bool write_failed = false;
+	bool write_success = false;
+	int first_error = 0;
 
 	if (ic_dev == NULL) {
 		chg_err("oplus_chg_ic_dev is NULL");
@@ -2918,21 +2922,34 @@ static int oplus_chg_vg_set_batt_deep_term_volt(struct oplus_chg_ic_dev *ic_dev,
 	/* TODO: check common config */
 
 	chip = oplus_chg_ic_get_drvdata(ic_dev);
+
 	for (i = 0; i < chip->child_num; i++) {
 		if (!func_is_support(&chip->child_list[i],
 				     OPLUS_IC_FUNC_GAUGE_SET_DEEP_TERM_VOLT)) {
-			rc = (rc == 0) ? -ENOTSUPP : rc;
 			continue;
 		}
+		support_found = true;
 		rc = oplus_chg_ic_func(chip->child_list[i].ic_dev,
 				       OPLUS_IC_FUNC_GAUGE_SET_DEEP_TERM_VOLT, volt);
-		if (rc < 0)
-			chg_err("child ic[%d] set battery deep term volt error, rc=%d\n",
-				i, rc);
-		break;
+
+		if (rc < 0) {
+			write_failed = true;
+			if (first_error == 0)
+				first_error = rc;
+			chg_err("child ic[%d] set battery deep term volt error, rc=%d\n", i, rc);
+		} else {
+			write_success = true;
+		}
 	}
 
-	return rc;
+	if (!support_found)
+		return -ENOTSUPP;
+	if (write_failed)
+		return first_error;
+	if (write_success)
+		return 0;
+
+	return -ENOTSUPP;
 }
 
 static int oplus_chg_vg_get_batt_deep_term_volt(struct oplus_chg_ic_dev *ic_dev, int *volt)
@@ -4113,7 +4130,11 @@ static int oplus_chg_vg_set_batt_vct(struct oplus_chg_ic_dev *ic_dev, int vct)
 {
 	struct oplus_virtual_gauge_ic *chip;
 	int i;
-	int rc = 0;
+	int rc = -ENOTSUPP;
+	bool support_found = false;
+	bool write_failed = false;
+	bool write_success = false;
+	int first_error = 0;
 
 	if (ic_dev == NULL) {
 		chg_err("oplus_chg_ic_dev is NULL");
@@ -4124,18 +4145,32 @@ static int oplus_chg_vg_set_batt_vct(struct oplus_chg_ic_dev *ic_dev, int vct)
 	for (i = 0; i < chip->child_num; i++) {
 		if (!func_is_support(&chip->child_list[i],
 				     OPLUS_IC_FUNC_GAUGE_SET_VCT)) {
-			rc = (rc == 0) ? -ENOTSUPP : rc;
 			continue;
 		}
+		support_found = true;
 		rc = oplus_chg_ic_func(chip->child_list[i].ic_dev,
 				       OPLUS_IC_FUNC_GAUGE_SET_VCT, vct);
-		if (rc < 0)
+		if (rc < 0) {
+			write_failed = true;
+			if (first_error == 0)
+				first_error = rc;
 			chg_err("child ic[%d] set battery vct error, rc=%d\n",
 				i, rc);
-		break;
+		} else {
+			write_success = true;
+		}
 	}
 
-	return rc;
+	if (!support_found)
+		return -ENOTSUPP;
+
+	if (write_failed)
+		return first_error;
+
+	if (write_success)
+		return 0;
+
+	return -ENOTSUPP;
 }
 
 static int oplus_chg_vg_set_batt_cuv_state(struct oplus_chg_ic_dev *ic_dev, int cuv_state)
@@ -4248,7 +4283,6 @@ static int oplus_chg_vg_check_imp_model(struct oplus_chg_ic_dev *ic_dev)
 				       OPLUS_IC_FUNC_GAUGE_CHECK_IMP_MODEL);
 		if (rc < 0)
 			chg_err("child ic[%d] gauge error, rc=%d\n", i, rc);
-		break;
 	}
 
 	return rc;

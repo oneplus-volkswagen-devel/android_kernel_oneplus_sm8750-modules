@@ -201,6 +201,7 @@ struct oplus_chg_vooc {
 	struct votable *wired_icl_votable;
 	struct votable *common_chg_suspend_votable;
 	struct votable *vooc_chg_auto_mode_votable;
+	struct votable *vooc_vac2v2x_uvp_votable;
 
 	struct work_struct vooc_watchdog_work;
 	struct timer_list watchdog;
@@ -1550,6 +1551,7 @@ static bool oplus_vooc_is_allow_fast_chg(struct oplus_chg_vooc *chip)
 	int btb_check_cnt = BTB_CHECK_MAX_CNT;
 	int btb_temp;
 	int usb_temp;
+	bool shaft_btb_normal = true;
 
 	if (chip->comm_topic) {
 		oplus_mms_get_item_data(chip->comm_topic, COMM_ITEM_UI_SOC, &data, true);
@@ -1624,9 +1626,10 @@ static bool oplus_vooc_is_allow_fast_chg(struct oplus_chg_vooc *chip)
 	while (btb_check_cnt != 0) {
 		btb_temp = oplus_wired_get_batt_btb_temp();
 		usb_temp = oplus_wired_get_usb_btb_temp();
+		shaft_btb_normal = oplus_wired_get_shaft_btb_is_normal();
 		chg_info("btb_temp: %d, usb_temp = %d", btb_temp, usb_temp);
 
-		if (btb_temp < BTB_OVER_TEMP && usb_temp < BTB_OVER_TEMP)
+		if (btb_temp < BTB_OVER_TEMP && usb_temp < BTB_OVER_TEMP && shaft_btb_normal)
 			break;
 
 		btb_check_cnt--;
@@ -1640,6 +1643,11 @@ static bool oplus_vooc_is_allow_fast_chg(struct oplus_chg_vooc *chip)
 			vote(chip->wired_icl_votable, BTB_TEMP_OVER_VOTER, true,
 			     BTB_TEMP_OVER_MAX_INPUT_CUR, true);
 	}
+
+	if (!shaft_btb_normal && btb_check_cnt == 0)
+		oplus_wired_set_shaft_btb_over(true);
+	else
+		oplus_wired_set_shaft_btb_over(false);
 
 skip_vooc_warm_check:
 	return chip->fastchg_allow;
@@ -3787,6 +3795,33 @@ static void oplus_vooc_plugout_clear_complete(struct oplus_chg_vooc *chip)
 	}
 }
 
+static void oplus_mms_handle_usb_status(struct oplus_chg_vooc *chip)
+{
+	int rc = 0;
+	union mms_msg_data data = { 0 };
+
+	rc = oplus_mms_get_item_data(chip->wired_topic,
+			WIRED_ITEM_USB_STATUS, &data, false);
+	if (rc < 0) {
+		chg_err("failed to get WIRED_ITEM_USB_STATUS, rc=%d\n", rc);
+		return;
+	}
+	if (chip->vooc_disable_votable == NULL) {
+		chg_err("vooc_disable_votable is NULL\n");
+		return;
+	}
+	if ((data.intval & USB_TEMP_HIGH) == USB_TEMP_HIGH) {
+		chg_err("!!!USB TEMP HIGH disable vooc\n");
+		rc = vote(chip->vooc_disable_votable, USB_VOTER, true, 1, false);
+		if (rc < 0)
+			chg_err("failed to vote vooc disable, rc=%d\n", rc);
+	} else {
+		rc = vote(chip->vooc_disable_votable, USB_VOTER, false, 0, false);
+		if (rc < 0)
+			chg_err("failed to vote vooc enable, rc=%d\n", rc);
+	}
+}
+
 static void oplus_vooc_wired_subs_callback(struct mms_subscribe *subs,
 					   enum mms_msg_type type, u32 id, bool sync)
 {
@@ -3853,6 +3888,9 @@ static void oplus_vooc_wired_subs_callback(struct mms_subscribe *subs,
 		case WIRED_ITEM_ICL_DONE_STATUS:
 			complete_all(&chip->icl_done_ack);
 			chg_info("accept icl done\n");
+			break;
+		case WIRED_ITEM_USB_STATUS:
+			oplus_mms_handle_usb_status(chip);
 			break;
 		default:
 			break;
@@ -5514,6 +5552,16 @@ static struct mms_item oplus_vooc_item[] = {
 	},
 	{
 		.desc = {
+			.item_id = VOOC_ITEM_OLD_ADAPTER_STATUS,
+			.str_data = false,
+			.up_thr_enable = false,
+			.down_thr_enable = false,
+			.dead_thr_enable = false,
+			.update = NULL,
+		}
+	},
+	{
+		.desc = {
 			.item_id = VOOC_ITEM_FASTCHG_COMMU_ING,
 			.str_data = false,
 			.up_thr_enable = false,
@@ -6079,6 +6127,24 @@ static int oplus_vooc_chg_auto_mode_vote_callback(struct votable *votable,
 	return rc;
 }
 
+static int oplus_vooc_vac2v2x_uvp_vote_callback(struct votable *votable,
+						void *data, int disable,
+						const char *client, bool step)
+{
+	struct oplus_chg_vooc *chip = data;
+	int rc;
+
+	rc = set_chg_vac2v2x_uvp(chip->vooc_ic, disable);
+	if (rc)
+		chg_err("falied to %s %s vac2v2x uvp, rc= %d\n", client,
+			 disable ? "disable" : "enable", rc);
+	else
+		chg_info("%s %s vac2v2x uvp\n", client,
+			 disable ? "disable" : "enable");
+
+	return rc;
+}
+
 static int oplus_vooc_boot_vote_callback(struct votable *votable, void *data,
 					 int boot, const char *client,
 					 bool step)
@@ -6141,6 +6207,15 @@ static int oplus_vooc_vote_init(struct oplus_chg_vooc *chip)
 		goto creat_vooc_chg_auto_mode_votable_err;
 	}
 
+	chip->vooc_vac2v2x_uvp_votable =
+		create_votable("VOOC_VAC2V2X_UVP", VOTE_SET_ANY,
+			       oplus_vooc_vac2v2x_uvp_vote_callback, chip);
+	if (IS_ERR(chip->vooc_vac2v2x_uvp_votable)) {
+		rc = PTR_ERR(chip->vooc_vac2v2x_uvp_votable);
+		chip->vooc_vac2v2x_uvp_votable = NULL;
+		goto creat_vooc_vac2v2x_uvp_votable_err;
+	}
+
 	chip->vooc_boot_votable =
 		create_votable("VOOC_BOOT", VOTE_SET_ANY,
 			       oplus_vooc_boot_vote_callback, chip);
@@ -6162,6 +6237,8 @@ static int oplus_vooc_vote_init(struct oplus_chg_vooc *chip)
 	return 0;
 
 creat_vooc_boot_votable_err:
+	destroy_votable(chip->vooc_vac2v2x_uvp_votable);
+creat_vooc_vac2v2x_uvp_votable_err:
 	destroy_votable(chip->vooc_chg_auto_mode_votable);
 creat_vooc_chg_auto_mode_votable_err:
 	destroy_votable(chip->pd_svooc_votable);
@@ -6841,6 +6918,7 @@ proc_init_err:
 strategy_init_err:
 topic_init_err:
 	destroy_votable(chip->vooc_boot_votable);
+	destroy_votable(chip->vooc_vac2v2x_uvp_votable);
 	destroy_votable(chip->vooc_chg_auto_mode_votable);
 	destroy_votable(chip->pd_svooc_votable);
 	destroy_votable(chip->vooc_not_allow_votable);
@@ -6889,6 +6967,7 @@ static int oplus_vooc_remove(struct platform_device *pdev)
 	if (chip->general_strategy)
 		oplus_chg_strategy_release(chip->general_strategy);
 	destroy_votable(chip->vooc_boot_votable);
+	destroy_votable(chip->vooc_vac2v2x_uvp_votable);
 	destroy_votable(chip->pd_svooc_votable);
 	destroy_votable(chip->vooc_not_allow_votable);
 	destroy_votable(chip->vooc_disable_votable);

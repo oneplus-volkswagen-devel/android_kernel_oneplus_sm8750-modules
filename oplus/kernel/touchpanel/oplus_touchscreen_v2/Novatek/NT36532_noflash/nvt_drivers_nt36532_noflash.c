@@ -1961,12 +1961,29 @@ static unsigned int nvt_trigger_reason(void *chip_data, int gesture_enable, int 
 	struct chip_data_nt36523 *chip_info = (struct chip_data_nt36523 *)chip_data;
 	int32_t ret = -1;
 	uint32_t irq_reason = IRQ_IGNORE;
+	uint8_t *point_data = NULL;
+	uint8_t uplink_status = 0;
+	uint8_t fw_status = 0;
+	uint8_t water_mode = 0;
+	uint8_t er_prevent = 0;
+	uint8_t bending = 0;
+	uint8_t palm_flag = 0;
+	uint8_t raw_flag = 0;
+	uint8_t diff_abnormal = 0;
+	uint8_t down_thd = 0;
+	uint8_t up_thd = 0;
+	int16_t maxdiff = 0;
+	int16_t mindiff = 0;
+	uint8_t pos_cnt = 0;
+	uint8_t neg_cnt = 0;
+	static int point_num1 = 0;
+	static int point_num2 = 0;
 
 	if (IS_ERR_OR_NULL(chip_info) || IS_ERR_OR_NULL(chip_info->point_data)) {
 		TPD_INFO("%s:NULL chip_info", __func__);
 		return IRQ_IGNORE;
 	}
-
+	point_data = chip_info->point_data;
 	memset(chip_info->point_data, 0, POINT_DATA_LEN);
 	ret = CTP_SPI_READ(chip_info->s_client, chip_info->point_data, POINT_DATA_LEN + 1);
 	if (ret < 0) {
@@ -1974,6 +1991,26 @@ static unsigned int nvt_trigger_reason(void *chip_data, int gesture_enable, int 
 		return IRQ_IGNORE;
 	}
 
+	/* debug status */
+	fw_status = (point_data[110] >> 6) & 0x03;
+	water_mode = (point_data[110] >> 2) & 0x01;
+	er_prevent = point_data[110] & 0x01;
+	bending = (point_data[110] >> 3) & 0x01;
+	palm_flag = ((point_data[1] & 0x7) == 0x5) ? 1 : 0;
+	raw_flag = (point_data[109] >> 6) & 0x01;
+	diff_abnormal = (point_data[109] >> 7) & 0x01;
+	uplink_status = (point_data[109] >> 3) & 0x01;
+	down_thd = point_data[112];
+	up_thd = point_data[113];
+	maxdiff = point_data[115] + (point_data[114] << 8);
+	mindiff = point_data[117] + (point_data[116] << 8);
+	pos_cnt = point_data[118];
+	neg_cnt = point_data[119];
+
+	TPD_SPECIFIC_PRINT(point_num1, "fw_status: %d, water_mode: %d, er_prevent: %d, bending: %d, palm: %d, raw_flag: %d, diff_abnormal: %d, uplink_status: %d\n",
+		fw_status, water_mode, er_prevent, bending, palm_flag, raw_flag, diff_abnormal, uplink_status);
+	TPD_SPECIFIC_PRINT(point_num2, "down_thd: %d, up_thd: %d, maxdiff: %d, mindiff: %d, pos_cnt: %d, neg_cnt: %d\n",
+		down_thd, up_thd, maxdiff, mindiff, pos_cnt, neg_cnt);
 	/*some kind of protect mechanism, after WDT firware redownload and try to save tp*/
 	ret = nvt_wdt_fw_recovery(chip_info, chip_info->point_data);
 	if (ret) {

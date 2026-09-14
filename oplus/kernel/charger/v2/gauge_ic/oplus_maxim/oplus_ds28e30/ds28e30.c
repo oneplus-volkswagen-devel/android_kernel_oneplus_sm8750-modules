@@ -1569,9 +1569,9 @@ int standard_cmd_flow(u8 *write_buf, int write_len, int delayms, int expect_read
 	pkt[0] = read_byte();
 	pkt[1] = read_byte();
 	if (get_maxim_romid_crc_support()) {
-		if(write_buf[0] == CMD_COMP_READ_AUTH)
+		if (write_buf[0] == CMD_COMP_READ_AUTH)
 			pkt[1] = EXPECTED_READ_LENGTH_65;
-		if(write_buf[0] == CMD_READ_MEM)
+		if (write_buf[0] == CMD_READ_MEM)
 			pkt[1] = EXPECTED_READ_LENGTH_33;
 		if (write_buf[0] == CMD_READ_STATUS) {
 			if ((STATUS_DATA_LENGTH_VERIFY & write_buf[1]) == ZERO_VALUE)
@@ -1597,11 +1597,6 @@ int standard_cmd_flow(u8 *write_buf, int write_len, int delayms, int expect_read
 		/* read packet */
 		for (i = 0; i <  *read_len+2; i++)
 			read_buf[i] = read_byte();
-		if (write_buf[0] == CMD_READ_MEM && write_buf[1] == 106) {
-			//corrrect bit errors in reading decrement counter
-			read_buf[3] = read_buf[3] & 0x01;
-			memset(&read_buf[4], 0x00, 32-3);
-		}
 		if (get_maxim_romid_crc_support()) {
 			i = read_data_correction(read_buf, *read_len, write_buf, write_len);  /* try to correct 1-wire read data if crc16 is error */
 			if (i >= 2)

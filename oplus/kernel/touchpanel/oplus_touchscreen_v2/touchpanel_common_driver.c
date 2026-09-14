@@ -4491,6 +4491,7 @@ int register_common_touch_device(struct touchpanel_data *pdata)
 	ts->report_rate_testing = false;
 	ts->report_rate_test_time = 5;
 	ts->touch_frame_num = 0;
+	ts->idle_freq_enable = 0;
 	for (i = 0; i < MAX_FINGER_NUM; i++) {
 		ts->last_x_y_point[i].x = 0;
 		ts->last_x_y_point[i].y = 0;

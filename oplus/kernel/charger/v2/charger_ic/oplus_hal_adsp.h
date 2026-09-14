@@ -45,6 +45,7 @@
 #define AP_OPCODE_READ_BUFFER     0x10006
 #define AP_OPCODE_WRITE_BUFFER    0x10008
 #define OPLUS_OPCODE_GET_SINK_MSG 0x10009
+#define AP_OPCODE_PD_INFO_BUFFER  0x1000A
 #define OEM_READ_WAIT_TIME_MS    500
 #define MAX_OEM_PROPERTY_DATA_SIZE 128
 #define AP_READ_WAIT_TIME_MS      1000
@@ -52,6 +53,7 @@
 #define AP_UFCS_WAIT_TIME_MS      500
 #define MAX_UFCS_CAPS_ITEM        16
 #define MAX_REVERSE_CHG_MSG_ITEM  16
+#define MAX_PD_INFO_MSG_SIZE_MAX  8
 #endif
 
 #define MSG_OWNER_BC			32778
@@ -117,6 +119,7 @@
 #define PD_CONNECT_HARD_RESET		0x7f
 #define GAUGE_INITED			0X90
 #define PD_PPS_CHECK_COMPLETED		0x91
+#define PD_VDM_INFO_READY		0x92
 #endif
 
 #ifdef OPLUS_FEATURE_CHG_BASIC
@@ -130,6 +133,7 @@
 #define WLS_FW_WAIT_TIME_MS		500
 #define WLS_FW_BUF_SIZE			128
 #define DEFAULT_RESTRICT_FCC_UA		1000000
+#define OPLUS_VDM_INFO_MAX		5
 
 #ifdef OPLUS_FEATURE_CHG_BASIC
 struct oem_read_buffer_req_msg {
@@ -152,6 +156,13 @@ struct oplus_ap_read_ufcs_req_msg {
 struct oplus_ap_read_ufcs_resp_msg {
 	struct pmic_glink_hdr hdr;
 	u64 data_buffer[MAX_UFCS_CAPS_ITEM];
+	u32 data_size;
+	u32 msg_id;
+};
+
+struct oplus_ap_read_pd_info_msg {
+	struct pmic_glink_hdr hdr;
+	u32 data_buffer[MAX_PD_INFO_MSG_SIZE_MAX];
 	u32 data_size;
 	u32 msg_id;
 };
@@ -389,6 +400,9 @@ enum usb_property_id {
 	USB_REVERSE_CHG_SET_CURRENT,
 	USB_RVS_HIGH_MODE_EN,
 	USB_SET_WIRED_USB_STATUS,
+	/* PD partner SVID (lower 16 bits valid) */
+	USB_ADAPTER_SVID,
+	USB_PD_SEND_GET_SINK_CAP,
 #endif /*OPLUS_FEATURE_CHG_BASIC*/
 	USB_PROP_MAX,
 };
@@ -420,6 +434,11 @@ enum ufcs_read_msg_id {
 	UFCS_VDM_EMARK_INFO,
 	UFCS_ADAPTER_VERIFY,
 };
+
+enum oplus_pd_info_msg_id {
+	OPLUS_PD_INFO_MSG_ID_VDM_ID,
+	OPLUS_PD_INFO_MSG_ID_MAX,
+    };
 
 enum {
 	QTI_POWER_SUPPLY_USB_TYPE_HVDCP = 0x80,
@@ -598,6 +617,7 @@ struct oplus_custom_gpio_pinctrl {
 	int tx_ovp_en_gpio;
 	int wrx_ovp_off_gpio;
 	int wrx_otg_en_gpio;
+	int supplementary_power_mos_gpio;
 	struct mutex pinctrl_mutex;
 	struct pinctrl *vchg_trig_pinctrl;
 	struct pinctrl_state *vchg_trig_default;
@@ -627,6 +647,9 @@ struct oplus_custom_gpio_pinctrl {
 	struct pinctrl *wrx_otg_en_pinctrl;
 	struct pinctrl_state *wrx_otg_en_active;
 	struct pinctrl_state *wrx_otg_en_sleep;
+	struct pinctrl *supplementary_power_pinctrl;
+	struct pinctrl_state *supplementary_power_mos_active;
+	struct pinctrl_state *supplementary_power_mos_sleep;
 };
 
 #endif
@@ -644,6 +667,7 @@ struct oplus_chg_iio {
 	struct iio_channel	*vph_pwr_chan;
 	struct iio_channel	*vbat_sns_qbg_chan;
 	struct iio_channel	*pmic_vbat_adc;
+	struct iio_channel	*shaft_btb_temp_chan;
 };
 
 enum oplus_sub_btb_adc_index {
@@ -890,11 +914,18 @@ struct battery_chg_dev {
 	bool ufcs_run_check_support;
 	bool error_prop;
 	int sub_btb_valid_temp[OPLUS_SUB_BTB_MAX];
+	u32 vdm_info_data[OPLUS_VDM_INFO_MAX];
+	int vdm_info_cnt;
+	struct mutex vdm_info_lock;
 #endif
 	int batt_full_para[CHARGING_TYPE_MAX][QBG_TEMP_MAX];
 	int batt_full_temp[QBG_TEMP_MAX];
 	bool batt_full_method_new;
+	bool power_mos_status;
+	bool need_check_mos;
 	bool pd_check_completed;
+	int mos_retry_cnt;
+	atomic_t is_shaft_btb_over;
 	bool adsp_reboot_discnt_chg_support;
 };
 

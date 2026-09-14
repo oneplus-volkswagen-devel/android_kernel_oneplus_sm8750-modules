@@ -128,10 +128,15 @@ struct chip_hl7603 {
 #if IS_ENABLED(CONFIG_OPLUS_CHG_TEST_KIT)
 	struct test_feature *boost_id_gpio_test;
 	struct test_feature *fpga_boost_test;
+	struct test_feature *chip_id_test;
 #endif
 	unsigned long rst_ing;
 	int chip_id;
 };
+
+#if IS_ENABLED(CONFIG_OPLUS_CHG_TEST_KIT)
+static int hl7603_register_chip_id_test(struct chip_hl7603 *chip);
+#endif
 
 static bool hl7603_is_writeable_reg(struct device *dev, unsigned int reg)
 {
@@ -357,6 +362,7 @@ error:
 
 static int hl7603_reg_dump(struct oplus_chg_ic_dev *ic_dev);
 #define HL7603_CHIP_ID_REV	0xB3	/* the HL7603 default value of address 0x0 */
+#define HL7603A_CHIP_ID_REV	0xB4	/* the HL7603A default value of address 0x0 */
 static int hl7603_hardware_init(struct chip_hl7603 *chip)
 {
 	int rc = 0;
@@ -365,21 +371,22 @@ static int hl7603_hardware_init(struct chip_hl7603 *chip)
 	if (chip->ic_dev == NULL) {
 		chg_err("chip->ic_dev is NULL\n");
 		return 0;
-	}
 
 	rc = hl7603_read(chip, DEV_ID_REV_REG, (unsigned int *)&buf[6]);
-	if (rc >= 0 && buf[6] != HL7603_CHIP_ID_REV) {
+	if (rc >= 0) {
 		chip->chip_id = buf[6];
-		chg_info("chip_id 0x%x is not HL7603%d\n", chip->chip_id, chip->ic_dev->index);
-		return 0;
+		if (chip->chip_id != HL7603_CHIP_ID_REV && chip->chip_id != HL7603A_CHIP_ID_REV) {
+			chg_info("chip_id 0x%x not supported%d\n", chip->chip_id, chip->ic_dev->index);
+			return 0;
+		}
 	}
 
 	rc = hl7603_write(chip, HL7603_VOUT_SEL_REG, vout_mv_to_reg(chip->vout_mv));
 	rc = hl7603_write(chip, HL7603_ILIM_SET_REG, hl7603_ilim_ma_to_reg(chip->ilim_ma));
 	rc = hl7603_read(chip, HL7603_CONFIG_1_REG, (unsigned int *)&buf[0]);
 
-	/* Auto PFM mode. */
-	rc = hl7603_write(chip, HL7603_CONFIG_1_REG, HL7603_FPWM_CFG_AUTO_PFM_REG);
+	/* forced PWM mode. */
+	rc = hl7603_write(chip, HL7603_CONFIG_1_REG, (buf[0] | HL7603_FPWM_CFG_FORCE_PWM));
 	rc = hl7603_read(chip, HL7603_CONFIG_1_REG, (unsigned int *)&buf[0]);
 	rc = hl7603_read(chip, HL7603_VOUT_SEL_REG, (unsigned int *)&buf[1]);
 	rc = hl7603_read(chip, HL7603_ILIM_SET_REG, (unsigned int *)&buf[2]);
@@ -402,8 +409,13 @@ static int hl7603_hardware_init(struct chip_hl7603 *chip)
 		chip->hl7603_init_track_count = 0;
 	}
 
-	chg_info("byb_id:%d,i2c %s reg=%*ph\n", chip->ic_dev->index,
+	chg_info("byb_id:%d,chip_id:0x%02x,i2c %s reg=%*ph\n",
+		chip->ic_dev->index, chip->chip_id,
 		chip->i2c_success ? "success" : "fail", HL7603_REG_CNT, buf);
+
+#if IS_ENABLED(CONFIG_OPLUS_CHG_TEST_KIT)
+	hl7603_register_chip_id_test(chip);
+#endif
 
 	return 0;
 }
@@ -826,6 +838,33 @@ static bool test_kit_fpga_boost_test(struct test_feature *feature, char *buf, si
 		return false;
 }
 
+static bool test_kit_chip_id_test(struct test_feature *feature, char *buf, size_t len)
+{
+	struct chip_hl7603 *chip;
+	int index = 0;
+	const char *chip_name = "unknown";
+
+	if (buf == NULL) {
+		pr_err("buf is NULL\n");
+		return false;
+	}
+	if (feature == NULL) {
+		pr_err("feature is NULL\n");
+		index += snprintf(buf + index, len - index, "feature is NULL");
+		return false;
+	}
+
+	chip = feature->private_data;
+	if (chip->chip_id == HL7603_CHIP_ID_REV)
+		chip_name = "HL7603";
+	else if (chip->chip_id == HL7603A_CHIP_ID_REV)
+		chip_name = "HL7603A";
+
+	index += snprintf(buf + index, len - index, "chip_id:0x%02x (%s)\n",
+			  chip->chip_id, chip_name);
+	return true;
+}
+
 static const struct test_feature_cfg boost_id_gpio_test_cfg = {
 	.name = "boost_id_gpio_test",
 	.test_func = test_kit_boost_id_gpio_test,
@@ -835,6 +874,27 @@ static const struct test_feature_cfg fpga_boost_test_cfg = {
 	.name = "fpga_boost_test",
 	.test_func = test_kit_fpga_boost_test,
 };
+
+static const struct test_feature_cfg chip_id_test_cfg = {
+	.name = "chip_id_test",
+	.test_func = test_kit_chip_id_test,
+};
+
+static int hl7603_register_chip_id_test(struct chip_hl7603 *chip)
+{
+	if (NULL == chip)
+		return 0;
+
+	if (IS_ERR_OR_NULL(chip->chip_id_test)) {
+		chip->chip_id_test = test_feature_register(&chip_id_test_cfg, chip);
+		if (IS_ERR_OR_NULL(chip->chip_id_test))
+			chg_err("chip_id_test register error");
+		else
+			chg_info("chip_id_test register success");
+	}
+
+	return 0;
+}
 #endif
 
 #ifdef CONFIG_OPLUS_CHG_IC_DEBUG
@@ -1143,6 +1203,8 @@ static int hl7603_driver_remove(struct i2c_client *client)
 		test_feature_unregister(chip->boost_id_gpio_test);
 	if (!IS_ERR_OR_NULL(chip->fpga_boost_test))
 		test_feature_unregister(chip->fpga_boost_test);
+	if (!IS_ERR_OR_NULL(chip->chip_id_test))
+		test_feature_unregister(chip->chip_id_test);
 #endif
 
 	if (!gpio_is_valid(chip->id_gpio))

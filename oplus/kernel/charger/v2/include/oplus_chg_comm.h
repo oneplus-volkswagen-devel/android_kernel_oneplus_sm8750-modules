@@ -202,4 +202,5 @@ void oplus_comm_set_dec_delta(struct oplus_mms *topic, int val);
 void oplus_comm_get_dec_delta(struct oplus_mms *topic, int *val);
 bool oplus_comm_get_hmac_not_pop_up(struct oplus_mms *topic);
 int oplus_comm_get_bdd_voltdiff_trend(struct oplus_mms *topic);
+int oplus_comm_smooth_strategy_rus_set_secondary_smooth_map(struct oplus_mms *topic, bool enable);
 #endif /* __OPLUS_CHG_COMM_H__ */

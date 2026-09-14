@@ -66,6 +66,7 @@ oplus_chg_v2-y += oplus_dischg_boost.o
 oplus_chg_v2-$(CONFIG_OPLUS_CHG_PARALLEL) += oplus_parallel.o
 
 oplus_chg_v2-y += gauge_ic/oplus_hal_bq27541.o
+oplus_chg_v2-$(CONFIG_OPLUS_GAUGE_SH366002) += gauge_ic/oplus_hal_sh366002.o
 oplus_chg_v2-$(CONFIG_OPLUS_GAUGE_MPC7022) += gauge_ic/oplus_hal_mpc7022.o
 oplus_chg_v2-$(CONFIG_OPLUS_GAUGE_BQ27Z561) += gauge_ic/oplus_hal_bq27z561.o
 oplus_chg_v2-$(CONFIG_OPLUS_GAUGE_NFG8011B) += gauge_ic/oplus_hal_nfg8011b.o
@@ -115,6 +116,7 @@ oplus_chg_v2-y += strategy/oplus_strategy_battery_smooth.o
 oplus_chg_v2-y += strategy/oplus_strategy_volt_fastchg_allow.o
 oplus_chg_v2-y += strategy/oplus_strategy_pcc.o
 oplus_chg_v2-y += strategy/oplus_strategy_pcc_v2.o
+oplus_chg_v2-y += strategy/oplus_strategy_cycle_current_derating.o
 oplus_chg_v2-y += monitor/oplus_monitor_core.o
 oplus_chg_v2-y += monitor/oplus_chg_track.o
 oplus_chg_v2-y += monitor/oplus_chg_exception.o
