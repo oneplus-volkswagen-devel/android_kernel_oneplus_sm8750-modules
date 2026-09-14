@@ -63,7 +63,9 @@
 #include "cam_tfe_csid.h"
 #include "cam_csid_ppi100.h"
 #include "camera_main.h"
-
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+#include "cam_common_util.h"
+#endif
 #ifdef CONFIG_CAM_PRESIL
 extern int cam_presil_framework_dev_init_from_main(void);
 extern void cam_presil_framework_dev_exit_from_main(void);
@@ -293,6 +295,9 @@ static int camera_init(void)
 	int rc;
 	uint i, j, num_inits;
 
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	common_mem_pools_init();
+#endif
 	rc = camera_verify_submodules();
 	if (rc)
 		goto end_init;
