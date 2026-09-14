@@ -49,7 +49,10 @@ extern struct dc_apollo_pcc_sync dc_apollo;
 extern int oplus_display_private_api_init(void);
 extern void oplus_display_private_api_exit(void);
 extern struct panel_id panel_id;
-extern int is_fpga_work_okay(void);
+__attribute__((weak)) int is_fpga_work_okay(void)
+{
+	return 0;
+}
 extern bool oplus_ofp_get_aod_state(void);
 
 bool g_oplus_send_fps_code = false;
@@ -302,6 +305,7 @@ int oplus_panel_enable_post(struct dsi_panel *panel)
 void oplus_panel_switch_pre(struct dsi_panel *panel)
 {
 	panel->oplus_panel.ts_timestamp = ktime_get();
+	oplus_panel_all_timing_switch_frame_delay(panel);
 	oplus_panel_timing_switch_lut_set(panel);
 
 	return;
@@ -310,6 +314,7 @@ void oplus_panel_switch_pre(struct dsi_panel *panel)
 void oplus_panel_switch_post(struct dsi_panel *panel)
 {
 	/* pwm switch due to timming switch */
+	panel->oplus_panel.switch_fps_to_esd_timestamp = ktime_get();
 	oplus_panel_pwm_switch_timing_switch(panel);
 	oplus_panel_timing_switch_wait_te(panel);
 

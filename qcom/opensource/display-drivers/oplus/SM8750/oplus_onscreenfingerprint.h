@@ -116,6 +116,7 @@ enum oplus_ofp_longrui_aod_config {					/* hardware capability */
 	OPLUS_OFP_NORMAL_TO_AOD_CONFIG = BIT(0),
 	OPLUS_OFP_A_MIRROR_TO_THE_END_AOD_CONFIG = BIT(1),
 	OPLUS_OFP_FULL_SCREEN_AOD_CONFIG = BIT(2),
+	OPLUS_OFP_FULL_SCREEN_ALL_DAY_AOD_CONFIG = BIT(3),
 };
 
 enum oplus_ofp_longrui_aod_mode {					/* system setting */

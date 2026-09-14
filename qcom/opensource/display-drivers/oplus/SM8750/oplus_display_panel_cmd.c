@@ -46,6 +46,11 @@ const char *cmd_set_prop_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-lp1-command",
 	"qcom,mdss-dsi-lp2-command",
 	"qcom,mdss-dsi-nolp-command",
+	"qcom,mdss-dsi-nolp-60hz-command",
+	"qcom,mdss-dsi-nolp-90hz-command",
+	"qcom,mdss-dsi-nolp-120hz-command",
+	"qcom,mdss-dsi-nolp-144hz-command",
+	"qcom,mdss-dsi-nolp-165hz-command",
 	"PPS not parsed from DTSI, generated dynamically",
 	"ROI not parsed from DTSI, generated dynamically",
 	"qcom,mdss-dsi-timing-switch-command",
@@ -75,6 +80,7 @@ const char *cmd_set_prop_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-adfr-min-fps-4-command",
 	"qcom,mdss-dsi-adfr-min-fps-5-command",
 	"qcom,mdss-dsi-adfr-min-fps-6-command",
+#ifdef OPLUS_FEATURE_DISPLAY_ADFR_EXTEND
 	"qcom,mdss-dsi-adfr-min-fps-7-command",
 	"qcom,mdss-dsi-adfr-min-fps-8-command",
 	"qcom,mdss-dsi-adfr-min-fps-9-command",
@@ -83,6 +89,7 @@ const char *cmd_set_prop_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-adfr-min-fps-12-command",
 	"qcom,mdss-dsi-adfr-min-fps-13-command",
 	"qcom,mdss-dsi-adfr-min-fps-14-command",
+#endif
 	"qcom,mdss-dsi-hpwm-adfr-min-fps-0-command",
 	"qcom,mdss-dsi-hpwm-adfr-min-fps-1-command",
 	"qcom,mdss-dsi-hpwm-adfr-min-fps-2-command",
@@ -90,6 +97,7 @@ const char *cmd_set_prop_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-hpwm-adfr-min-fps-4-command",
 	"qcom,mdss-dsi-hpwm-adfr-min-fps-5-command",
 	"qcom,mdss-dsi-hpwm-adfr-min-fps-6-command",
+#ifdef OPLUS_FEATURE_DISPLAY_ADFR_EXTEND
 	"qcom,mdss-dsi-hpwm-adfr-min-fps-7-command",
 	"qcom,mdss-dsi-hpwm-adfr-min-fps-8-command",
 	"qcom,mdss-dsi-hpwm-adfr-min-fps-9-command",
@@ -98,6 +106,7 @@ const char *cmd_set_prop_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-hpwm-adfr-min-fps-12-command",
 	"qcom,mdss-dsi-hpwm-adfr-min-fps-13-command",
 	"qcom,mdss-dsi-hpwm-adfr-min-fps-14-command",
+#endif
 	"qcom,mdss-dsi-bigdc-adfr-min-fps-0-command",
 	"qcom,mdss-dsi-bigdc-adfr-min-fps-1-command",
 	"qcom,mdss-dsi-bigdc-adfr-min-fps-2-command",
@@ -105,6 +114,7 @@ const char *cmd_set_prop_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-bigdc-adfr-min-fps-4-command",
 	"qcom,mdss-dsi-bigdc-adfr-min-fps-5-command",
 	"qcom,mdss-dsi-bigdc-adfr-min-fps-6-command",
+#ifdef OPLUS_FEATURE_DISPLAY_ADFR_EXTEND
 	"qcom,mdss-dsi-bigdc-adfr-min-fps-7-command",
 	"qcom,mdss-dsi-bigdc-adfr-min-fps-8-command",
 	"qcom,mdss-dsi-bigdc-adfr-min-fps-9-command",
@@ -113,6 +123,7 @@ const char *cmd_set_prop_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-bigdc-adfr-min-fps-12-command",
 	"qcom,mdss-dsi-bigdc-adfr-min-fps-13-command",
 	"qcom,mdss-dsi-bigdc-adfr-min-fps-14-command",
+#endif
 	"qcom,mdss-dsi-adfr-pre-switch-command",
 #endif /* OPLUS_FEATURE_DISPLAY_ADFR */
 #ifdef OPLUS_FEATURE_DISPLAY_HIGH_PRECISION
@@ -157,8 +168,6 @@ const char *cmd_set_prop_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-aod-on-pwm-mode2-command",
 	"qcom,mdss-dsi-aod-off-pwm-mode2-command",
 	"qcom,mdss-dsi-aod-off-compensation-command",
-	"qcom,mdss-dsi-aod-off-compensation-pwm-mode1-command",
-	"qcom,mdss-dsi-aod-off-compensation-pwm-mode2-command",
 #endif /* OPLUS_FEATURE_DISPLAY_ONSCREENFINGERPRINT */
 #ifdef OPLUS_FEATURE_DISPLAY
 	"qcom,mdss-dsi-post-on-backlight",
@@ -172,12 +181,12 @@ const char *cmd_set_prop_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-spr-0-command",
 	"qcom,mdss-dsi-spr-1-command",
 	"qcom,mdss-dsi-spr-2-command",
-	"qcom,mdss-dsi-data-dimming-on-command",
-	"qcom,mdss-dsi-data-dimming-off-command",
+#ifdef OPLUS_FEATURE_DISPLAY_OSC
 	"qcom,mdss-dsi-osc-clk-mode0-command",
 	"qcom,mdss-dsi-osc-clk-mode1-command",
 	"qcom,mdss-dsi-osc-track-on-command",
 	"qcom,mdss-dsi-osc-track-off-command",
+#endif
 	"qcom,mdss-dsi-ffc-mode0-command",
 	"qcom,mdss-dsi-ffc-mode1-command",
 	"qcom,mdss-dsi-ffc-mode2-command",
@@ -196,9 +205,11 @@ const char *cmd_set_prop_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-pwm-switch-mode0-command",
 	"qcom,mdss-dsi-pwm-switch-mode1-command",
 	"qcom,mdss-dsi-pwm-switch-mode2-command",
+#ifdef OPLUS_FEATURE_DISPLAY_PWM_EXTEND
 	"qcom,mdss-dsi-pwm-state-l1tol2-command",
-	"qcom,mdss-dsi-pwm-state-l1tol3-command",
 	"qcom,mdss-dsi-pwm-state-l2tol1-command",
+#endif /* #ifdef OPLUS_FEATURE_DISPLAY_PWM_EXTEND */
+	"qcom,mdss-dsi-pwm-state-l1tol3-command",
 	"qcom,mdss-dsi-pwm-state-l2tol3-command",
 	"qcom,mdss-dsi-pwm-state-l3tol1-command",
 	"qcom,mdss-dsi-pwm-state-l3tol2-command",
@@ -213,8 +224,10 @@ const char *cmd_set_prop_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-pwm-dbv-threshold-extend-command",
 	"qcom,mdss-dsi-pwm-switch-low-bl-command",
 	"qcom,mdss-dsi-pwm-switch-high-bl-command",
+#ifdef OPLUS_FEATURE_DISPLAY_DLY_EXTEND
 	"qcom,mdss-dsi-dly-on-command",
 	"qcom,mdss-dsi-dly-off-command",
+#endif /* #ifdef OPLUS_FEATURE_DISPLAY_DLY_EXTEND */
 	"qcom,mdss-dsi-cabc-off-command",
 	"qcom,mdss-dsi-cabc-ui-command",
 	"qcom,mdss-dsi-cabc-still-image-command",
@@ -226,6 +239,7 @@ const char *cmd_set_prop_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-panel-init-command",
 	"qcom,mdss-dsi-optimize-on-command",
 	"qcom,mdss-dsi-optimize-vice-on-command",
+	"qcom,mdss-dsi-vid-165hz-switch-command",
 	"qcom,mdss-dsi-vid-144hz-switch-command",
 	"qcom,mdss-dsi-vid-120hz-switch-command",
 	"qcom,mdss-dsi-vid-90hz-switch-command",
@@ -291,6 +305,8 @@ const char *cmd_set_prop_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-fps-switch-enter-165Hz-command",
 	"qcom,mdss-dsi-fps-switch-144Hz-enter-165Hz-command",
 	"qcom,mdss-dsi-fps-switch-enter-144Hz-command",
+	"qcom,mdss-dsi-fps-switch-60-to-120-compensation-command",
+	"qcom,mdss-dsi-fps-switch-120-to-60-compensation-command",
 #endif /* OPLUS_FEATURE_DISPLAY */
 
 #ifdef OPLUS_FEATURE_AP_UIR_DIMMING
@@ -320,6 +336,11 @@ const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-lp1-command-state",
 	"qcom,mdss-dsi-lp2-command-state",
 	"qcom,mdss-dsi-nolp-command-state",
+	"qcom,mdss-dsi-nolp-60hz-command-state",
+	"qcom,mdss-dsi-nolp-90hz-command-state",
+	"qcom,mdss-dsi-nolp-120hz-command-state",
+	"qcom,mdss-dsi-nolp-144hz-command-state",
+	"qcom,mdss-dsi-nolp-165hz-command-state",
 	"PPS not parsed from DTSI, generated dynamically",
 	"ROI not parsed from DTSI, generated dynamically",
 	"qcom,mdss-dsi-timing-switch-command-state",
@@ -349,6 +370,7 @@ const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-adfr-min-fps-4-command-state",
 	"qcom,mdss-dsi-adfr-min-fps-5-command-state",
 	"qcom,mdss-dsi-adfr-min-fps-6-command-state",
+#ifdef OPLUS_FEATURE_DISPLAY_ADFR_EXTEND
 	"qcom,mdss-dsi-adfr-min-fps-7-command-state",
 	"qcom,mdss-dsi-adfr-min-fps-8-command-state",
 	"qcom,mdss-dsi-adfr-min-fps-9-command-state",
@@ -357,6 +379,7 @@ const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-adfr-min-fps-12-command-state",
 	"qcom,mdss-dsi-adfr-min-fps-13-command-state",
 	"qcom,mdss-dsi-adfr-min-fps-14-command-state",
+#endif
 	"qcom,mdss-dsi-hpwm-adfr-min-fps-0-command-state",
 	"qcom,mdss-dsi-hpwm-adfr-min-fps-1-command-state",
 	"qcom,mdss-dsi-hpwm-adfr-min-fps-2-command-state",
@@ -364,6 +387,7 @@ const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-hpwm-adfr-min-fps-4-command-state",
 	"qcom,mdss-dsi-hpwm-adfr-min-fps-5-command-state",
 	"qcom,mdss-dsi-hpwm-adfr-min-fps-6-command-state",
+#ifdef OPLUS_FEATURE_DISPLAY_ADFR_EXTEND
 	"qcom,mdss-dsi-hpwm-adfr-min-fps-7-command-state",
 	"qcom,mdss-dsi-hpwm-adfr-min-fps-8-command-state",
 	"qcom,mdss-dsi-hpwm-adfr-min-fps-9-command-state",
@@ -372,6 +396,7 @@ const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-hpwm-adfr-min-fps-12-command-state",
 	"qcom,mdss-dsi-hpwm-adfr-min-fps-13-command-state",
 	"qcom,mdss-dsi-hpwm-adfr-min-fps-14-command-state",
+#endif
 	"qcom,mdss-dsi-bigdc-adfr-min-fps-0-command-state",
 	"qcom,mdss-dsi-bigdc-adfr-min-fps-1-command-state",
 	"qcom,mdss-dsi-bigdc-adfr-min-fps-2-command-state",
@@ -379,6 +404,7 @@ const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-bigdc-adfr-min-fps-4-command-state",
 	"qcom,mdss-dsi-bigdc-adfr-min-fps-5-command-state",
 	"qcom,mdss-dsi-bigdc-adfr-min-fps-6-command-state",
+#ifdef OPLUS_FEATURE_DISPLAY_ADFR_EXTEND
 	"qcom,mdss-dsi-bigdc-adfr-min-fps-7-command-state",
 	"qcom,mdss-dsi-bigdc-adfr-min-fps-8-command-state",
 	"qcom,mdss-dsi-bigdc-adfr-min-fps-9-command-state",
@@ -387,6 +413,7 @@ const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-bigdc-adfr-min-fps-12-command-state",
 	"qcom,mdss-dsi-bigdc-adfr-min-fps-13-command-state",
 	"qcom,mdss-dsi-bigdc-adfr-min-fps-14-command-state",
+#endif
 	"qcom,mdss-dsi-adfr-pre-switch-command-state",
 #endif /* OPLUS_FEATURE_DISPLAY_ADFR */
 #ifdef OPLUS_FEATURE_DISPLAY_HIGH_PRECISION
@@ -431,8 +458,6 @@ const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-aod-on-pwm-mode2-command-state",
 	"qcom,mdss-dsi-aod-off-pwm-mode2-command-state",
 	"qcom,mdss-dsi-aod-off-compensation-command-state",
-	"qcom,mdss-dsi-aod-off-compensation-pwm-mode1-command-state",
-	"qcom,mdss-dsi-aod-off-compensation-pwm-mode2-command-state",
 #endif /* OPLUS_FEATURE_DISPLAY_ONSCREENFINGERPRINT */
 #ifdef OPLUS_FEATURE_DISPLAY
 	"qcom,mdss-dsi-post-on-backlight-state",
@@ -446,12 +471,12 @@ const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-spr-0-command-state",
 	"qcom,mdss-dsi-spr-1-command-state",
 	"qcom,mdss-dsi-spr-2-command-state",
-	"qcom,mdss-dsi-data-dimming-on-command-state",
-	"qcom,mdss-dsi-data-dimming-off-command-state",
+#ifdef OPLUS_FEATURE_DISPLAY_OSC
 	"qcom,mdss-dsi-osc-clk-mode0-command-state",
 	"qcom,mdss-dsi-osc-clk-mode1-command-state",
 	"qcom,mdss-dsi-osc-track-on-command-state",
 	"qcom,mdss-dsi-osc-track-off-command-state",
+#endif
 	"qcom,mdss-dsi-ffc-mode0-command-state",
 	"qcom,mdss-dsi-ffc-mode1-command-state",
 	"qcom,mdss-dsi-ffc-mode2-command-state",
@@ -470,9 +495,11 @@ const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-pwm-switch-mode0-command-state",
 	"qcom,mdss-dsi-pwm-switch-mode1-command-state",
 	"qcom,mdss-dsi-pwm-switch-mode2-command-state",
+#ifdef OPLUS_FEATURE_DISPLAY_PWM_EXTEND
 	"qcom,mdss-dsi-pwm-state-l1tol2-command-state",
-	"qcom,mdss-dsi-pwm-state-l1tol3-command-state",
 	"qcom,mdss-dsi-pwm-state-l2tol1-command-state",
+#endif /* #ifdef OPLUS_FEATURE_DISPLAY_PWM_EXTEND */
+	"qcom,mdss-dsi-pwm-state-l1tol3-command-state",
 	"qcom,mdss-dsi-pwm-state-l2tol3-command-state",
 	"qcom,mdss-dsi-pwm-state-l3tol1-command-state",
 	"qcom,mdss-dsi-pwm-state-l3tol2-command-state",
@@ -487,8 +514,10 @@ const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-pwm-dbv-threshold-extend-command-state",
 	"qcom,mdss-dsi-pwm-switch-low-bl-command-state",
 	"qcom,mdss-dsi-pwm-switch-high-bl-command-state",
+#ifdef OPLUS_FEATURE_DISPLAY_DLY_EXTEND
 	"qcom,mdss-dsi-dly-on-command-state",
 	"qcom,mdss-dsi-dly-off-command-state",
+#endif /* #ifdef OPLUS_FEATURE_DISPLAY_DLY_EXTEND */
 	"qcom,mdss-dsi-cabc-off-command-state",
 	"qcom,mdss-dsi-cabc-ui-command-state",
 	"qcom,mdss-dsi-cabc-still-image-command-state",
@@ -500,6 +529,7 @@ const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-panel-init-command-state",
 	"qcom,mdss-dsi-optimize-on-command-state",
 	"qcom,mdss-dsi-optimize-vice-on-command-state",
+	"qcom,mdss-dsi-vid-165hz-switch-command-state",
 	"qcom,mdss-dsi-vid-144hz-switch-command-state",
 	"qcom,mdss-dsi-vid-120hz-switch-command-state",
 	"qcom,mdss-dsi-vid-90hz-switch-command-state",
@@ -565,6 +595,8 @@ const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-fps-switch-enter-165Hz-command-state",
 	"qcom,mdss-dsi-fps-switch-144Hz-enter-165Hz-command-state",
 	"qcom,mdss-dsi-fps-switch-enter-144Hz-command-state",
+	"qcom,mdss-dsi-fps-switch-60-to-120-compensation-command-state",
+	"qcom,mdss-dsi-fps-switch-120-to-60-compensation-command-state",
 #endif /* OPLUS_FEATURE_DISPLAY */
 #ifdef OPLUS_FEATURE_AP_UIR_DIMMING
 	"oplus,dsi-panel-apuir-on-command-state",
@@ -678,6 +710,7 @@ int oplus_panel_cmd_print(struct dsi_panel *panel, enum dsi_cmd_set_type type)
 	case DSI_CMD_ADFR_MIN_FPS_4:
 	case DSI_CMD_ADFR_MIN_FPS_5:
 	case DSI_CMD_ADFR_MIN_FPS_6:
+#ifdef OPLUS_FEATURE_DISPLAY_ADFR_EXTEND
 	case DSI_CMD_ADFR_MIN_FPS_7:
 	case DSI_CMD_ADFR_MIN_FPS_8:
 	case DSI_CMD_ADFR_MIN_FPS_9:
@@ -686,6 +719,7 @@ int oplus_panel_cmd_print(struct dsi_panel *panel, enum dsi_cmd_set_type type)
 	case DSI_CMD_ADFR_MIN_FPS_12:
 	case DSI_CMD_ADFR_MIN_FPS_13:
 	case DSI_CMD_ADFR_MIN_FPS_14:
+#endif
 	case DSI_CMD_HPWM_ADFR_MIN_FPS_0:
 	case DSI_CMD_HPWM_ADFR_MIN_FPS_1:
 	case DSI_CMD_HPWM_ADFR_MIN_FPS_2:
@@ -693,6 +727,7 @@ int oplus_panel_cmd_print(struct dsi_panel *panel, enum dsi_cmd_set_type type)
 	case DSI_CMD_HPWM_ADFR_MIN_FPS_4:
 	case DSI_CMD_HPWM_ADFR_MIN_FPS_5:
 	case DSI_CMD_HPWM_ADFR_MIN_FPS_6:
+#ifdef OPLUS_FEATURE_DISPLAY_ADFR_EXTEND
 	case DSI_CMD_HPWM_ADFR_MIN_FPS_7:
 	case DSI_CMD_HPWM_ADFR_MIN_FPS_8:
 	case DSI_CMD_HPWM_ADFR_MIN_FPS_9:
@@ -701,6 +736,7 @@ int oplus_panel_cmd_print(struct dsi_panel *panel, enum dsi_cmd_set_type type)
 	case DSI_CMD_HPWM_ADFR_MIN_FPS_12:
 	case DSI_CMD_HPWM_ADFR_MIN_FPS_13:
 	case DSI_CMD_HPWM_ADFR_MIN_FPS_14:
+#endif
 	case DSI_CMD_BIGDC_ADFR_MIN_FPS_0:
 	case DSI_CMD_BIGDC_ADFR_MIN_FPS_1:
 	case DSI_CMD_BIGDC_ADFR_MIN_FPS_2:
@@ -708,6 +744,7 @@ int oplus_panel_cmd_print(struct dsi_panel *panel, enum dsi_cmd_set_type type)
 	case DSI_CMD_BIGDC_ADFR_MIN_FPS_4:
 	case DSI_CMD_BIGDC_ADFR_MIN_FPS_5:
 	case DSI_CMD_BIGDC_ADFR_MIN_FPS_6:
+#ifdef OPLUS_FEATURE_DISPLAY_ADFR_EXTEND
 	case DSI_CMD_BIGDC_ADFR_MIN_FPS_7:
 	case DSI_CMD_BIGDC_ADFR_MIN_FPS_8:
 	case DSI_CMD_BIGDC_ADFR_MIN_FPS_9:
@@ -716,6 +753,7 @@ int oplus_panel_cmd_print(struct dsi_panel *panel, enum dsi_cmd_set_type type)
 	case DSI_CMD_BIGDC_ADFR_MIN_FPS_12:
 	case DSI_CMD_BIGDC_ADFR_MIN_FPS_13:
 	case DSI_CMD_BIGDC_ADFR_MIN_FPS_14:
+#endif
 		if (panel->cur_mode->priv_info->oplus_adfr_idle_min_fps_log) {
 			ADFR_DEBUG("[%s] dsi_cmd: %s, count=%d\n", panel->oplus_panel.vendor_name,
 					cmd_set_prop_map[type], count);
@@ -738,6 +776,20 @@ int oplus_panel_cmd_print(struct dsi_panel *panel, enum dsi_cmd_set_type type)
 
 void oplus_panel_timing_switch_cmd_replace_handle(struct dsi_panel *panel, enum dsi_cmd_set_type *type)
 {
+	if(!strcmp(panel->name, "AA605 P 7 A0020 dsc cmd mode panel")) {
+		if (panel->oplus_panel.last_refresh_rate == 120 && panel->cur_mode->timing.refresh_rate == 60) {
+			if (*type == DSI_CMD_SET_TIMING_SWITCH) {
+				*type = DSI_CMD_SET_FPS_SWITCH_120_TO_60_COMPENSATION;
+				return;
+			}
+		} else if (panel->oplus_panel.last_refresh_rate == 60 && panel->cur_mode->timing.refresh_rate == 120) {
+			if (*type == DSI_CMD_SET_TIMING_SWITCH) {
+				*type = DSI_CMD_SET_FPS_SWITCH_60_TO_120_COMPENSATION;
+				return;
+			}
+		}
+	}
+
 	if (panel->oplus_panel.last_refresh_rate != 165) {
 		return;
 	}
@@ -1124,6 +1176,10 @@ int oplus_panel_vid_cmdp_handle(void *dsi_panel, enum dsi_cmd_set_type type)
 	if((panel->panel_mode != DSI_OP_VIDEO_MODE) || (!panel->oplus_panel.enable_dsi_cmd_package)) {
 		return 0;
 	}
+	if (strncmp(current->comm, "crtc_commit", 11) != 0) {
+		return 0;
+	}
+
 	mode = panel->cur_mode;
 	cmds = mode->priv_info->cmd_sets[type].cmds;
 	count = mode->priv_info->cmd_sets[type].count;
@@ -1145,6 +1201,12 @@ int oplus_panel_vid_cmdp_handle(void *dsi_panel, enum dsi_cmd_set_type type)
 	case DSI_CMD_FPS_ENTER_165HZ:
 	case DSI_CMD_FPS_144HZ_ENTER_165HZ:
 	case DSI_CMD_FPS_ENTER_144HZ:
+	case DSI_CMD_LOADING_EFFECT_MODE1:
+	case DSI_CMD_LOADING_EFFECT_MODE2:
+	case DSI_CMD_LOADING_EFFECT_OFF:
+	case DSI_CMD_LHBM_PRESSED_ICON_ON:
+		dsi_cmd_set_type_status = 0;
+		panel->oplus_panel.dsi_cmd_need_to_package = false;
 		break;
 	default:
 		if (count > 0) {

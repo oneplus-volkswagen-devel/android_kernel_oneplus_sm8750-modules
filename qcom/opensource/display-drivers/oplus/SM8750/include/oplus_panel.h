@@ -98,6 +98,8 @@ struct oplus_backlight_config {
 	bool global_hbm_scale_mapping;
 	bool oplus_limit_max_bl_mode;
 	u32 oplus_limit_max_bl;
+	bool oplus_limit_min_bl_mode;
+	u32 oplus_limit_min_bl;
 	bool oplus_demura2_offset_support;
 	bool need_to_set_demura2_offset;
 	u32 demura2_offset;
@@ -107,6 +109,7 @@ struct oplus_backlight_config {
 	make sure demura cmd and bl cmd set by one frame */
 	bool oplus_bl_demura_set_by_one_frame;
 	bool need_set_demura;
+	bool video_mode_aod_close_backlight_sync;
 };
 
 /*
@@ -214,6 +217,7 @@ struct oplus_panel {
 	u32 wait_te_config;
 	bool change_voltage_before_panel_bl_0;
 	bool interval_time_nolp_pre;
+	bool interval_time_fps_to_esd_flag;
 
 	/* ---------------- feature variate ---------------- */
 	bool dp_support;
@@ -272,6 +276,7 @@ struct oplus_panel {
 	struct mutex oplus_ffc_lock;
 	ktime_t te_timestamp;
 	ktime_t ts_timestamp;
+	ktime_t switch_fps_to_esd_timestamp;
 
 	struct oplus_pwm_turbo_params pwm_params;
 	u32 last_us_per_frame;
@@ -301,15 +306,26 @@ struct oplus_panel {
 
 	bool gamma_compensation_support;
 	int power_mode_early;
+	int last_power_mode;
 
 	/* indicates how many frames cost from aod off cmd sent to normal frame,
 	"0" means once aod off cmd sent the next frame will be normal frame */
 	unsigned int aod_off_frame_cost;
 
+	bool all_timing_switch_frame_delay;
+
 	/* add for factory test fps switch, ignore some fps */
 	int ignore_mode_count;
 	u32 *ignore_mode;
 	struct oplus_dynamic_float_te_params dfte_params;
+	/* add a common configuration item for ili7838E */
+	bool ofp_configuration_enable_for_ili7838e;
+
+	bool doze_disable_esdcheck;
+	/* add for aod mode cmd switch */
+	bool ramless_aod_mode_cmd_switch_support;
+	/* add for disable aod recovery*/
+	bool disalbe_aod_recovery;
 };
 
 #endif /* _OPLUS_PANEL_H_ */

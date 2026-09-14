@@ -1200,6 +1200,15 @@ int dsi_display_check_status(struct drm_connector *connector, void *display,
 	if (atomic_read(&panel->esd_recovery_pending))
 		goto release_panel_lock;
 
+#ifdef OPLUS_FEATURE_DISPLAY
+	if (panel->oplus_panel.doze_disable_esdcheck) {
+		if (oplus_ofp_get_aod_state()) {
+			DSI_WARN("[ESD] Panel in aod state, skip esd check!\n");
+			goto release_panel_lock;
+		}
+	}
+#endif /* OPLUS_FEATURE_DISPLAY */
+
 	status_mode = panel->esd_config.status_mode;
 
 	if ((status_mode == ESD_MODE_SW_SIM_SUCCESS) || is_sim_panel(display))

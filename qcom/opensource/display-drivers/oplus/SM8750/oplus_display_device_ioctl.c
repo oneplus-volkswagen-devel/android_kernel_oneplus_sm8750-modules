@@ -1026,11 +1026,13 @@ int oplus_display_panel_set_osc_track(u32 osc_status)
 				DSI_CORE_CLK, DSI_CLK_ON);
 	}
 
+#ifdef OPLUS_FEATURE_DISPLAY_OSC
 	if (osc_status) {
 		rc = dsi_panel_tx_cmd_set(display->panel, DSI_CMD_OSC_TRACK_ON, false);
 	} else {
 		rc = dsi_panel_tx_cmd_set(display->panel, DSI_CMD_OSC_TRACK_OFF, false);
 	}
+#endif
 	if (display->config.panel_mode == DSI_OP_CMD_MODE) {
 		rc = dsi_display_clk_ctrl(display->dsi_clk_handle,
 				DSI_CORE_CLK, DSI_CLK_OFF);
@@ -2021,6 +2023,7 @@ int oplus_display_panel_get_mipi_err_check(void *data)
 
 	return rc;
 }
+
 int oplus_display_panel_set_white_point_status(void *data)
 {
 	int rc = 0;

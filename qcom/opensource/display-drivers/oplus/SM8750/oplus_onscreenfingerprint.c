@@ -916,6 +916,12 @@ static int oplus_ofp_panel_cmd_set_nolock(void *dsi_panel, enum dsi_cmd_set_type
 			oplus_display_panel_set_global_hbm_status(GLOBAL_HBM_DISABLE);
 		}
 
+		if (p_oplus_ofp_params->aod_unlocking) {
+			p_oplus_ofp_params->aod_unlocking = false;
+			OFP_INFO("oplus_ofp_aod_unlocking:%d\n", p_oplus_ofp_params->aod_unlocking);
+			OPLUS_OFP_TRACE_INT("oplus_ofp_aod_unlocking", p_oplus_ofp_params->aod_unlocking);
+		}
+
 		/* recovery backlight level */
 		OPLUS_OFP_TRACE_BEGIN("dsi_panel_set_backlight");
 		rc = dsi_panel_set_backlight(panel, panel->bl_config.bl_level);
@@ -2943,6 +2949,11 @@ bool oplus_ofp_backlight_filter(void *dsi_panel, unsigned int bl_level)
 			OFP_INFO("aod layer exist, hbm_state is true, filter backlight %u setting\n", bl_level);
 			need_filter_backlight = true;
 		}
+		if ((p_oplus_ofp_params->aod_unlocking || p_oplus_ofp_params->fp_press) && (hbm_enable & OPLUS_OFP_PROPERTY_FINGERPRESS_LAYER)
+				&& bl_level && display->panel->oplus_panel.ofp_configuration_enable_for_ili7838e) {
+			OFP_INFO("lhbm press status is true, filter backlight %u setting\n", bl_level);
+			need_filter_backlight = true;
+		}
 	} else if ((p_oplus_ofp_params->aod_unlocking && !oplus_ofp_ultrasonic_is_enabled()) && p_oplus_ofp_params->fp_press && bl_level
 					&& !((p_oplus_ofp_params->longrui_aod_config & OPLUS_OFP_FULL_SCREEN_AOD_CONFIG)
 						&& (p_oplus_ofp_params->longrui_aod_mode & OPLUS_OFP_FULL_SCREEN_AOD_MODE))) {
@@ -3438,8 +3449,7 @@ int oplus_ofp_power_mode_handle(void *dsi_display, int power_mode)
 			}
 
 			refresh_rate = display->panel->cur_mode->timing.refresh_rate;
-			if ((!oplus_ofp_video_mode_30hz_aod_is_enabled()
-					|| (oplus_ofp_video_mode_30hz_aod_is_enabled() && (refresh_rate == 30)))
+			if ((!oplus_ofp_video_mode_30hz_aod_is_enabled())
 						&& !((p_oplus_ofp_params->longrui_aod_config & OPLUS_OFP_FULL_SCREEN_AOD_CONFIG)
 							&& (p_oplus_ofp_params->longrui_aod_mode & OPLUS_OFP_FULL_SCREEN_AOD_MODE))) {
 				/* whether need to wait for TE before AOD on */
@@ -3451,12 +3461,12 @@ int oplus_ofp_power_mode_handle(void *dsi_display, int power_mode)
 				if (p_oplus_ofp_params->need_to_sync_data_in_aod_on) {
 					oplus_ofp_aod_wait_handle(c_conn, 1);
 				}
-				oplus_ofp_set_aod_state(true);
 
 				rc = dsi_panel_set_lp1(display->panel);
 				if (rc) {
 					OFP_ERR("[%s] failed to send DSI_CMD_SET_LP1 cmds, rc=%d\n", display->name, rc);
 				}
+				oplus_ofp_set_aod_state(true);
 				rc = dsi_panel_set_lp2(display->panel);
 				if (rc) {
 					OFP_ERR("[%s] failed to send DSI_CMD_SET_LP2 cmds, rc=%d\n", display->name, rc);
@@ -3481,6 +3491,7 @@ int oplus_ofp_power_mode_handle(void *dsi_display, int power_mode)
 				}
 			} else if (oplus_ofp_video_mode_30hz_aod_is_enabled() && !oplus_ofp_get_aod_state()) {
 				/*video mode 30hz aod,avoid screen flickering*/
+				oplus_set_aod_close_backlight_sync(display);
 				mutex_lock(&display->panel->panel_lock);
 				rc = dsi_panel_set_backlight(display->panel, 0);
 				if (rc) {
@@ -3529,6 +3540,8 @@ int oplus_ofp_power_mode_handle(void *dsi_display, int power_mode)
 	default:
 		OFP_DEBUG("power_mode:%d\n", power_mode);
 	}
+
+	display->panel->oplus_panel.last_power_mode = power_mode;
 
 	mutex_unlock(&oplus_ofp_lock);
 
@@ -3695,7 +3708,7 @@ void oplus_ofp_video_mode_aod_brightness_change(struct dsi_panel *panel)
 		return;
 	}
 
-	OPLUS_OFP_TRACE_BEGIN("oplus_ofp_video_mode_aod_handle");
+	OPLUS_OFP_TRACE_BEGIN("oplus_ofp_video_mode_aod_brightness_change");
 
 	custom_cmd_set = panel->cur_mode->priv_info->cmd_sets[DSI_CMD_SET_LP1];
 	for (i = 0; i < custom_cmd_set.count; i++) {
@@ -3720,7 +3733,7 @@ void oplus_ofp_video_mode_aod_brightness_change(struct dsi_panel *panel)
 		}
 	}
 
-	OPLUS_OFP_TRACE_END("oplus_ofp_video_mode_aod_handle");
+	OPLUS_OFP_TRACE_END("oplus_ofp_video_mode_aod_brightness_change");
 	OFP_DEBUG("end\n");
 }
 
@@ -4084,7 +4097,9 @@ int oplus_ofp_aod_off_backlight_recovery(void *sde_encoder_virt)
 		p_oplus_ofp_params->aod_layer_disappeard_bl_ready = 0;
 	}
 
-	if ((!strcmp(display->panel->oplus_panel.vendor_name, "AE035")) &&  (hbm_enable & OPLUS_OFP_PROPERTY_FINGERPRESS_LAYER)) {
+	if (((!strcmp(display->panel->oplus_panel.vendor_name, "AE035")) ||
+			display->panel->oplus_panel.disalbe_aod_recovery) &&
+			(hbm_enable & OPLUS_OFP_PROPERTY_FINGERPRESS_LAYER)) {
 		if (p_oplus_ofp_params->panel_hbm_status || new_aod_layer_status) {
 			if (last_aod_layer_status && !new_aod_layer_status) {
 				mutex_lock(&display->panel->panel_lock);
