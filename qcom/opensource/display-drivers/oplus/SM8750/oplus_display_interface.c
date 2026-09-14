@@ -49,10 +49,7 @@ extern struct dc_apollo_pcc_sync dc_apollo;
 extern int oplus_display_private_api_init(void);
 extern void oplus_display_private_api_exit(void);
 extern struct panel_id panel_id;
-__attribute__((weak)) int is_fpga_work_okay(void)
-{
-	return 0;
-}
+extern int is_fpga_work_okay(void);
 extern bool oplus_ofp_get_aod_state(void);
 
 bool g_oplus_send_fps_code = false;
@@ -186,9 +183,9 @@ void oplus_bridge_pre_enable(struct dsi_display *display, struct dsi_display_mod
 	return;
 }
 
-void oplus_bridge_post_enable(struct dsi_display *display, struct dsi_display_mode *mode)
+void oplus_bridge_post_enable(struct dsi_display *display, struct dsi_display_mode *mode, bool flag)
 {
-	oplus_panel_switch_vid_mode_post(display, mode);
+	oplus_panel_switch_vid_mode_post(display, mode, flag);
 
 	return;
 }
@@ -304,8 +301,8 @@ int oplus_panel_enable_post(struct dsi_panel *panel)
 
 void oplus_panel_switch_pre(struct dsi_panel *panel)
 {
-	panel->oplus_panel.ts_timestamp = ktime_get();
 	oplus_panel_all_timing_switch_frame_delay(panel);
+	panel->oplus_panel.ts_timestamp = ktime_get();
 	oplus_panel_timing_switch_lut_set(panel);
 
 	return;
@@ -314,9 +311,9 @@ void oplus_panel_switch_pre(struct dsi_panel *panel)
 void oplus_panel_switch_post(struct dsi_panel *panel)
 {
 	/* pwm switch due to timming switch */
-	panel->oplus_panel.switch_fps_to_esd_timestamp = ktime_get();
 	oplus_panel_pwm_switch_timing_switch(panel);
 	oplus_panel_timing_switch_wait_te(panel);
+	panel->oplus_panel.switch_fps_to_esd_timestamp = ktime_get();
 
 	return;
 }
@@ -538,6 +535,7 @@ void oplus_panel_tx_cmd_set_pre(struct dsi_panel *panel,
 				enum dsi_cmd_set_type *type)
 {
 	oplus_panel_cmd_switch(panel, type);
+	oplus_panel_video_mode_aod_off_cmd_switch(panel, type);
 	oplus_panel_cmdq_sync_handle(panel, *type, true);
 	oplus_panel_vid_cmdp_handle(panel, *type);
 	oplus_panel_cmd_print(panel, *type);
@@ -1056,6 +1054,7 @@ void oplus_display_ops_init(struct oplus_display_ops *oplus_display_ops)
 	oplus_display_ops->panel_set_backlight_pre = oplus_panel_set_backlight_pre;
 	oplus_display_ops->panel_set_backlight_post = oplus_panel_set_backlight_post;
 	oplus_display_ops->panel_update_backlight = oplus_panel_update_backlight;
+	oplus_display_ops->get_aod_state = oplus_ofp_get_aod_state;
 	oplus_display_ops->backlight_setup_pre = oplus_backlight_setup_pre;
 	oplus_display_ops->backlight_setup_post = oplus_backlight_setup_post;
 

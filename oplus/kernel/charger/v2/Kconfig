@@ -202,6 +202,7 @@ config OPLUS_BOOST_SC83107
 
 config OPLUS_VOOCPHY_SC8527
 	bool "enable REG CP sc8527"
+	depends on OPLUS_CHG_VOOCPHY_CHGLIB && OPLUS_CHG_AP_VOOCPHY
 	help
 	  Say Y here to declare REG CP sc8527 support
 

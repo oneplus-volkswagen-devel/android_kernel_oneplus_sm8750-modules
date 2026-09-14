@@ -2365,9 +2365,13 @@ static int oplus_wired_ccdetect_enable(struct oplus_mms_wired *chip, bool en)
 
 	if (!oplus_wired_ccdetect_is_support())
 		return 0;
-
-	rc = oplus_chg_ic_func(chip->buck_ic, OPLUS_IC_FUNC_SET_TYPEC_MODE,
-		en ? TYPEC_PORT_ROLE_TRY_SNK : TYPEC_PORT_ROLE_SNK);
+	if (!!chip->reverse_topic) {
+		rc = oplus_chg_ic_func(chip->buck_ic, OPLUS_IC_FUNC_SET_TYPEC_MODE,
+			en ? TYPEC_PORT_ROLE_DRP : TYPEC_PORT_ROLE_SNK);
+	} else {
+		rc = oplus_chg_ic_func(chip->buck_ic, OPLUS_IC_FUNC_SET_TYPEC_MODE,
+			en ? TYPEC_PORT_ROLE_TRY_SNK : TYPEC_PORT_ROLE_SNK);
+	}
 	if (rc < 0)
 		chg_err("%s ccdetect error, rc=%d\n",
 			en ? "enable" : "disable", rc);

@@ -2995,6 +2995,7 @@ static void register_tri_key_dev_work(struct work_struct *work)
 		goto fail;
 	}
 	chip->input_dev->name = TRI_KEY_DEVICE;
+	chip->input_dev->id.vendor = 0x22d9; /* VENDOR_ID_OPPO */
 
 	set_bit(EV_SYN, chip->input_dev->evbit);
 	set_bit(EV_KEY, chip->input_dev->evbit);
@@ -3451,5 +3452,4 @@ int oplus_register_hall(const char *name, struct dhall_operations *ops,
 }
 EXPORT_SYMBOL(oplus_register_hall);
 MODULE_LICENSE("GPL");
-
 
