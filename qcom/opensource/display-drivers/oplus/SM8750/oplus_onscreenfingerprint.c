@@ -3801,10 +3801,6 @@ int oplus_ofp_video_mode_aod_handle(void *sde_encoder_virt)
 		return -EFAULT;
 	}
 
-	if (!p_oplus_ofp_params->doze_active) {
-		return 0;
-	}
-
 	OPLUS_OFP_TRACE_BEGIN("oplus_ofp_video_mode_aod_handle");
 
 	refresh_rate = display->panel->cur_mode->timing.refresh_rate;
