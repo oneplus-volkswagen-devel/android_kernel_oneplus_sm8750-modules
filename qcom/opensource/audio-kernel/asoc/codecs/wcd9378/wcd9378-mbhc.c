@@ -919,6 +919,10 @@ static const struct wcd_mbhc_cb mbhc_cb = {
 	.mbhc_moisture_polling_ctrl = wcd9378_mbhc_moisture_polling_ctrl,
 	.mbhc_moisture_detect_en = wcd9378_mbhc_moisture_detect_en,
 	.bcs_enable = wcd9378_mbhc_bcs_enable,
+#ifdef OPLUS_ARCH_EXTENDS
+/* Add for dio switch plug in pop noise  */
+	.mbhc_micbias_adjust_voltage = wcd9378_mbhc_micbias_adjust_voltage,
+#endif /* OPLUS_ARCH_EXTENDS */
 	.mbhc_button_debounce_set = wcd9378_mbhc_debounce_time_set,
 	.mbhc_force_micbias_disable = wcd9378_mbhc_force_micbias_disable,
 #ifdef OPLUS_ARCH_EXTENDS
