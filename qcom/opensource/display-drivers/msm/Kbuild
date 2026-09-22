@@ -89,7 +89,7 @@ LINUX_INC +=	-I$(DISPLAY_ROOT) \
 	-I$(DISPLAY_ROOT)/../synx-kernel/msm/synx \
 	-I$(DISPLAY_ROOT)/include/uapi/display \
 
-ifeq ($(CONFIG_PXLW_IRIS),y)
+ifeq (${CONFIG_PXLW_IRIS},y)
 PWATOP=$(DISPLAY_ROOT)/msm/iris
 LINUX_INC +=	-I$(PWATOP)/core/include \
 	-I$(PWATOP)/core \
@@ -113,6 +113,9 @@ ccflags-y += $(LINUX_INC)
 ifeq ($(call cc-option-yn, -Wmaybe-uninitialized),y)
 EXTRA_CFLAGS += -Wmaybe-uninitialized
 endif
+
+KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/vendor/qcom/opensource/display-drivers/hdcp/Module.symvers
+KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/vendor/qcom/opensource/display-drivers/msm/Module.symvers
 
 ifeq ($(call cc-option-yn, -Wheader-guard),y)
 EXTRA_CFLAGS += -Wheader-guard
@@ -285,7 +288,7 @@ msm_drm-$(CONFIG_DRM_MSM_DSI) += dsi/dsi_phy.o \
 				 dsi/dsi_clk_manager.o \
 				 dsi/dsi_display_test.o
 
-ifeq ($(CONFIG_PXLW_IRIS),y)
+ifeq (${CONFIG_PXLW_IRIS},y)
 include $(PWATOP)/core/Kbuild
 include $(PWATOP)/vendor/Kbuild
 endif
@@ -317,7 +320,6 @@ msm_drm-$(CONFIG_DRM_MSM) += msm_atomic.o \
 			     msm_gem_vma.o \
 			     msm_smmu.o \
 			     msm_prop.o
-
 msm_drm-$(OPLUS_FEATURE_DISPLAY) += \
 				../oplus/SM8750/oplus_apuirdim.o \
 				../oplus/SM8750/oplus_display_utils.o \
@@ -349,4 +351,6 @@ msm_drm-$(OPLUS_FEATURE_TP_BASIC) += ../oplus/SM8750/oplus_display_notify_tp.o
 
 ccflags-$(OPLUS_FEATURE_DISPLAY) += \
 	-I$(DISPLAY_ROOT)/oplus/SM8750 \
-	-I$(DISPLAY_ROOT)/oplus/SM8750/include \
+	-I$(DISPLAY_ROOT)/oplus/SM8750/include
+
+CDEFINES += -DBUILD_TIMESTAMP=\"$(shell date -u +'%Y-%m-%dT%H:%M:%SZ')\"

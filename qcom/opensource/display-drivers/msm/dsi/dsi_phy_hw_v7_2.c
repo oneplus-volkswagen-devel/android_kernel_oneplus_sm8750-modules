@@ -363,6 +363,7 @@ static void dsi_phy_hw_dphy_enable(struct dsi_phy_hw *phy, struct dsi_phy_cfg *c
 	bool split_link_enabled;
 	u32 lanes_per_sublink;
 	u32 cmn_lane_ctrl0 = 0;
+
 #ifdef OPLUS_FEATURE_DISPLAY
 	struct dsi_display *display = get_main_display();
 	if (display == NULL || display->panel == NULL) {

@@ -1694,10 +1694,10 @@ static void sde_encoder_phys_cmd_tearcheck_config(struct sde_encoder_phys *phys_
 #ifdef OPLUS_FEATURE_DISPLAY_ADFR
 	if (!oplus_adfr_is_oa_use_fixed_te(phys_enc)) {
 #endif /* OPLUS_FEATURE_DISPLAY_ADFR */
-	if (qsync_mode && cmd_enc->base.hw_intf->ops.enable_te_level_trigger &&
-			!sde_enc->disp_info.is_te_using_watchdog_timer)
-		cmd_enc->base.hw_intf->ops.enable_te_level_trigger(cmd_enc->base.hw_intf,
-			qsync_mode && !panel_dead);
+		if (qsync_mode && cmd_enc->base.hw_intf->ops.enable_te_level_trigger &&
+				!sde_enc->disp_info.is_te_using_watchdog_timer)
+			cmd_enc->base.hw_intf->ops.enable_te_level_trigger(cmd_enc->base.hw_intf,
+				qsync_mode && !panel_dead);
 #ifdef OPLUS_FEATURE_DISPLAY_ADFR
 	}
 #endif /* OPLUS_FEATURE_DISPLAY_ADFR */
@@ -2149,9 +2149,6 @@ static int _sde_encoder_phys_cmd_wait_for_wr_ptr(
 	struct sde_hw_ctl *ctl;
 	unsigned long lock_flags;
 	int ret, timeout_ms;
-#ifdef OPLUS_FEATURE_DISPLAY
-	struct dsi_display *dsi_display;
-#endif /* OPLUS_FEATURE_DISPLAY */
 
 	if (!phys_enc || !phys_enc->hw_ctl || !phys_enc->connector) {
 		SDE_ERROR("invalid argument(s)\n");
@@ -2198,26 +2195,6 @@ static int _sde_encoder_phys_cmd_wait_for_wr_ptr(
 #endif /* OPLUS_FEATURE_DISPLAY */
 
 		ret = (frame_pending || sde_connector_esd_status(phys_enc->connector)) ? ret : 0;
-
-#ifdef OPLUS_FEATURE_DISPLAY
-		dsi_display = _sde_connector_get_display(c_conn);
-
-		if (!dsi_display || !dsi_display->panel || !dsi_display->panel->name) {
-			SDE_ERROR("Invalid params(s) dsi_display %pK, panel %pK\n",
-			dsi_display,
-			((dsi_display) ? dsi_display->panel : NULL));
-			return -EINVAL;
-		}
-
-		if (strcmp(dsi_display->panel->name, "AB849 P 1 A0022 dsc cmd mode panel") &&
-			strcmp(dsi_display->panel->name, "P 3 AE035 dsc cmd mode panel")) {
-			oplus_sde_evtlog_dump_all();
-			if (get_eng_version() == FACTORY || get_eng_version() == AGING || get_eng_version() == HIGH_TEMP_AGING) {
-				SDE_EVT32(DRMID(phys_enc->parent), frame_pending, SDE_EVTLOG_FATAL);
-				SDE_DBG_DUMP(SDE_DBG_BUILT_IN_ALL, "panic");
-			}
-		}
-#endif
 
 		/*
 		 * There can be few cases of ESD where CTL_START is cleared but

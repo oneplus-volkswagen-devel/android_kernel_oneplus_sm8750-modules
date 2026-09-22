@@ -1156,6 +1156,11 @@ static void _sde_dbg_dump_bus_entry(struct sde_dbg_sde_debug_bus *bus,
 					continue;
 				}
 
+				if (entry->analyzer) {
+					entry->analyzer(wr_addr, i, j, status);
+					continue;
+				}
+
 				if (dump_addr && (in_mem || in_dump)
 						&& (!sde_dbg_base.coredump_reading)) {
 					*dump_addr++ = wr_addr;
@@ -1171,7 +1176,6 @@ static void _sde_dbg_dump_bus_entry(struct sde_dbg_sde_debug_bus *bus,
 						*(dump_addr + 2), *(dump_addr + 3));
 					dump_addr += 4;
 				}
-
 			}
 		}
 		/* Disable debug bus once we are done */
