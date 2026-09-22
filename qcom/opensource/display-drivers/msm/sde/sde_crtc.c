@@ -3331,14 +3331,16 @@ enum sde_intf_mode sde_crtc_get_intf_mode(struct drm_crtc *crtc,
 		struct drm_crtc_state *cstate)
 {
 	struct drm_encoder *encoder;
+	struct sde_crtc *sde_crtc;
 
 	if (!crtc || !crtc->dev || !cstate) {
 		SDE_ERROR("invalid crtc\n");
 		return INTF_MODE_NONE;
 	}
 
+	sde_crtc = to_sde_crtc(crtc);
 	drm_for_each_encoder_mask(encoder, crtc->dev,
-			cstate->encoder_mask) {
+			sde_crtc->cached_encoder_mask) {
 		/* continue if copy encoder is encountered */
 		if (sde_crtc_state_in_clone_mode(encoder, cstate) ||
 			sde_encoder_is_loopback_display(encoder))
@@ -4932,13 +4934,6 @@ static void _sde_crtc_atomic_begin(struct drm_crtc *crtc,
 			if (sde_encoder_in_clone_mode(encoder))
 				continue;
 			/* For cmd mode, with cesta immediate mode enablement, update perf votes
-			* during crtc commit kickoff. This will delay the new vote request and
-			* allows intra frame idle entry.
-			*/
-			if (sde_encoder_check_curr_mode(encoder, MSM_DISPLAY_CMD_MODE))
-				continue;
-
-			/* For cmd mode, with cesta immediate mode enablement, update perf votes
 			 * during crtc commit kickoff. This will delay the new vote request and
 			 * allows intra frame idle entry.
 			 */
@@ -6008,6 +6003,10 @@ static void sde_crtc_disable(struct drm_crtc *crtc)
 
 	/* Try to disable uidle */
 	sde_core_perf_crtc_update_uidle(crtc, false);
+
+	for (i = 0; i < SDE_SYS_CACHE_MAX; i++)
+		sde_crtc->new_perf.llcc_active[i] = 0;
+	sde_core_perf_crtc_update_llcc(crtc);
 
 	if (atomic_read(&sde_crtc->frame_pending)) {
 		SDE_ERROR("crtc%d frame_pending%d\n", crtc->base.id,

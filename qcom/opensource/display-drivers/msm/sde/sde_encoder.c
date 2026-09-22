@@ -180,8 +180,8 @@ enum sde_enc_rc_events {
 	SDE_ENC_RC_EVENT_ENTER_IDLE,
 	SDE_ENC_RC_EVENT_EARLY_WAKEUP,
 };
-
 int dbg_cnt = 0;
+
 bool sde_encoder_trusted_vm_release(struct sde_encoder_virt *sde_enc)
 {
 	enum sde_crtc_vm_req vm_req = VM_REQ_NONE;
@@ -5324,10 +5324,6 @@ static inline void _sde_encoder_trigger_flush(struct drm_encoder *drm_enc,
 		sde_enc->intf_master = ctl->ops.get_intf_master(ctl);
 		ctl->ops.set_intf_master(ctl, 0);
 	}
-
-	if (sde_enc->disp_info.vrr_caps.video_psr_support &&
-			!phys->sde_kms->catalog->hw_fence_rev)
-		ctl->ops.hw_fence_trigger_sw_override(ctl);
 
 	if (phys->ops.is_master && phys->ops.is_master(phys) && config_changed) {
 		atomic_inc(&phys->pending_retire_fence_cnt);

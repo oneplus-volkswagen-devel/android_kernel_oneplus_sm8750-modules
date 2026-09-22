@@ -87,7 +87,7 @@
 #define CTL_NUM_EXT			5
 #define CTL_SSPP_MAX_RECTS		2
 
-#define SDE_REG_RESET_TIMEOUT_US        2000
+#define SDE_REG_RESET_TIMEOUT_US        3000
 #define SDE_REG_WAIT_RESET_TIMEOUT_US        2000000
 
 #define UPDATE_MASK(m, idx, en)           \
@@ -1124,6 +1124,7 @@ static int sde_hw_ctl_reset_control(struct sde_hw_ctl *ctx)
 	c = &ctx->hw;
 	pr_debug("issuing hw ctl reset for ctl:%d\n", ctx->idx);
 	SDE_REG_WRITE(c, CTL_SW_RESET, 0x1);
+	SDE_EVT32(0xebad);
 	if (sde_hw_ctl_poll_reset_status(ctx, SDE_REG_RESET_TIMEOUT_US))
 		return -EINVAL;
 
@@ -1874,6 +1875,11 @@ static void _setup_ctl_ops(struct sde_hw_ctl_ops *ops,
 		ops->setup_flush_sync = sde_hw_ctl_setup_flush_sync;
 		ops->enable_sync_mode = sde_hw_ctl_enable_sync_mode;
 		ops->get_flush_sync_mode = sde_hw_ctl_get_flush_sync_mode;
+	}
+
+	if (cap & BIT(SDE_CTL_HYP_CTL_RESERVE)) {
+		ops->cesta_scc_reserve = sde_hw_hyp_ctl_cesta_reserve;
+		ops->reset_cesta_reserve = sde_hw_hyp_ctl_reset_cesta_reserve;
 	}
 }
 
