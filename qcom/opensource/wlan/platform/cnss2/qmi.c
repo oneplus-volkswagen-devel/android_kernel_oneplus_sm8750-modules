@@ -347,6 +347,16 @@ static void cnss_wlfw_host_cap_parse_mlo(struct cnss_plat_data *plat_priv,
 	}
 }
 
+#ifdef OPLUS_FEATURE_WIFI_BEAM_SWITCH
+static bool needSupportBeamSwitch(void) {
+		int project_id = get_project();
+		if (project_id == 24811) {
+			return true;
+		}
+		return false;
+}
+#endif /* OPLUS_FEATURE_WIFI_BEAM_SWITCH */
+
 #ifdef CONFIG_KASAN_GENERIC
 #define KSN_STR_LEN 6
 static void cnss_update_build_info(struct wlfw_host_cap_req_msg_v01 *req)
@@ -443,6 +453,31 @@ static int cnss_wlfw_host_cap_send_sync(struct cnss_plat_data *plat_priv)
 		cnss_pr_dbg("WAKE MSI base data is %d\n", req->wake_msi);
 		req->wake_msi_valid = 1;
 	}
+
+	#ifdef OPLUS_FEATURE_WIFI_BEAM_SWITCH
+	if (needSupportBeamSwitch()) {
+		req->gpios_valid = 1;
+
+		/* Format of GPIO configuration -
+		 * A_UINT32 default_output_val:1, GPIO default Output value if direction is output
+		 * reserved1:7, reserved bits
+		 * sw_func:4,   GPIO pin software function selection
+		 * pull:2,      GPIO Pull, TLMM_GPIO_CFGn.GPIO_PULL
+		 * func:4,      GPIO pin function, TLMM_GPIO_CFGn.FUNC_SEL
+		 * drive:3,     GPIO Drive, TLMM_GPIO_CFGn.DRV_STRENGTH
+		 * dir:1,       GPIO pin direction: PLAT_GPIO_DIR_OUTPUT
+		 * reserved0:2, reserved bits
+		 * gpio_num:8;  GPIO pin number
+		 */
+		/* 1st GPIO */
+		req->gpios[0] = 0x47242D00;  // set GPIO 71 as output low
+
+		/* The Nth GPIO if any, and update req->gpios_len accordingly
+		* Ensure gpios_len less than QMI_WLFW_MAX_NUM_GPIO_V01
+		*/
+		req->gpios_len = 1;
+	}
+	#endif /* OPLUS_FEATURE_WIFI_BEAM_SWITCH */
 
 	req->bdf_support_valid = 1;
 	req->bdf_support = 1;
@@ -1171,8 +1206,19 @@ int cnss_wlfw_bdf_dnld_send_sync(struct cnss_plat_data *plat_priv,
 	temp = fw_entry->data;
 	remaining = fw_entry->size;
 
+	#ifdef OPLUS_FEATURE_WIFI_DCS_SWITCH
+	//Add for wifi switch monitor
+	if (bdf_type == CNSS_BDF_REGDB) {
+		set_bit(CNSS_LOAD_REGDB_SUCCESS, &plat_priv->loadRegdbState);
+	} else if (bdf_type == CNSS_BDF_ELF){
+		set_bit(CNSS_LOAD_BDF_SUCCESS, &plat_priv->loadBdfState);
+	}
+	cnss_pr_info("Downloading %s: %s, size: %u\n",
+		    cnss_bdf_type_to_str(bdf_type), filename, remaining);
+	#else
 	cnss_pr_dbg("Downloading %s: %s, size: %u\n",
 		    cnss_bdf_type_to_str(bdf_type), filename, remaining);
+	#endif /* OPLUS_FEATURE_WIFI_DCS_SWITCH */
 
 	while (remaining) {
 		req->valid = 1;
@@ -1276,6 +1322,14 @@ int cnss_wlfw_bdf_dnld_send_sync(struct cnss_plat_data *plat_priv,
 err_send:
 	release_firmware(fw_entry);
 err_req_fw:
+	#ifdef OPLUS_FEATURE_WIFI_DCS_SWITCH
+	//Add for wifi switch monitor
+	if (bdf_type == CNSS_BDF_REGDB) {
+		set_bit(CNSS_LOAD_REGDB_FAIL, &plat_priv->loadRegdbState);
+	} else if (bdf_type == CNSS_BDF_ELF){
+		set_bit(CNSS_LOAD_BDF_FAIL, &plat_priv->loadBdfState);
+	}
+	#endif /* OPLUS_FEATURE_WIFI_DCS_SWITCH */
 	if (!(bdf_type == CNSS_BDF_REGDB ||
 	      test_bit(CNSS_IN_REBOOT, &plat_priv->driver_state) ||
 	      ret == -EAGAIN))
@@ -1713,6 +1767,10 @@ int cnss_wlfw_wlan_mac_req_send_sync(struct cnss_plat_data *plat_priv,
 	struct wlfw_mac_addr_resp_msg_v01 resp = {0};
 	struct qmi_txn txn;
 	int ret;
+#ifdef OPLUS_FEATURE_WIFI_MAC
+        int i;
+        char revert_mac[QMI_WLFW_MAC_ADDR_SIZE_V01];
+#endif /* OPLUS_FEATURE_WIFI_MAC */
 
 	if (!plat_priv || !mac || mac_len != QMI_WLFW_MAC_ADDR_SIZE_V01)
 		return -EINVAL;
@@ -1728,8 +1786,17 @@ int cnss_wlfw_wlan_mac_req_send_sync(struct cnss_plat_data *plat_priv,
 
 		cnss_pr_dbg("Sending WLAN mac req [%pM], state: 0x%lx\n",
 			    mac, plat_priv->driver_state);
-	memcpy(req.mac_addr, mac, mac_len);
-	req.mac_addr_valid = 1;
+#ifdef OPLUS_FEATURE_WIFI_MAC
+        for (i = 0; i < QMI_WLFW_MAC_ADDR_SIZE_V01 ; i ++){
+            revert_mac[i] = mac[QMI_WLFW_MAC_ADDR_SIZE_V01 - i -1];
+        }
+            cnss_pr_dbg("Sending revert WLAN mac req [%pM], state: 0x%lx\n",
+                            revert_mac, plat_priv->driver_state);
+        memcpy(req.mac_addr, revert_mac, mac_len);
+#else
+        memcpy(req.mac_addr, mac, mac_len);
+#endif /* OPLUS_FEATURE_WIFI_MAC */
+        req.mac_addr_valid = 1;
 
 	ret = qmi_send_request(&plat_priv->qmi_wlfw, NULL, &txn,
 			       QMI_WLFW_MAC_ADDR_REQ_V01,
@@ -4171,6 +4238,28 @@ void cnss_qmi_deinit(struct cnss_plat_data *plat_priv)
 	qmi_handle_release(&plat_priv->qmi_wlfw);
 }
 
+#ifdef OPLUS_FEATURE_WIFI_MAC
+static int generate_random_mac(uint8_t* mac_address) {
+	get_random_bytes(&mac_address[1], 3);
+	mac_address[0] = 0x00;
+	mac_address[4] = 0xC1;
+	mac_address[5] = 0xE0;
+
+	return 0;
+}
+
+static bool is_need_prevent_mac_fool(void) {
+	int project_id = get_project();
+	cnss_pr_dbg("the project id is: %d\n", project_id);
+	if (project_id == 24924 ||
+		project_id == 24926 ||
+		project_id == 24976) {
+		return true;
+	}
+	return false;
+}
+#endif
+
 int cnss_qmi_get_dms_mac(struct cnss_plat_data *plat_priv)
 {
 	struct dms_get_mac_address_req_msg_v01 req;
@@ -4244,6 +4333,16 @@ int cnss_qmi_get_dms_mac(struct cnss_plat_data *plat_priv)
 
 	return 0;
 out:
+#ifdef OPLUS_FEATURE_WIFI_MAC
+	if (is_need_prevent_mac_fool() &&
+		!plat_priv->dms.mac_valid) {
+		uint8_t mac_address[QMI_WLFW_MAC_ADDR_SIZE_V01] = {0x78, 0x01, 0x02, 0x03, 0xc7, 0x02};
+		plat_priv->dms.mac_valid = true;
+		ret = generate_random_mac(mac_address);
+		memcpy(plat_priv->dms.mac, mac_address, QMI_WLFW_MAC_ADDR_SIZE_V01);
+		cnss_pr_info("Generate Random MAC: [%pM]\n", plat_priv->dms.mac);
+	}
+#endif
 	return ret;
 }
 

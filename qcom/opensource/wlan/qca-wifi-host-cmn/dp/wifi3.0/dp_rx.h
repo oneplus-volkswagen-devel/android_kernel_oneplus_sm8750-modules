@@ -2501,6 +2501,26 @@ void dp_rx_update_stats(struct dp_soc *soc, qdf_nbuf_t nbuf)
 }
 #endif
 
+#ifdef DP_OFFLOAD_FRAME_WITH_SW_EXCEPTION
+/**
+ * dp_check_rx_from_reo_excpt() - Check nbuf coming for offload
+ * @nbuf: nbuf received
+ *
+ * Return: sw_exception indicate flag
+ */
+static inline
+uint8_t dp_check_rx_from_reo_excpt(qdf_nbuf_t nbuf)
+{
+	return qdf_nbuf_get_rx_reo_dest_ind_or_sw_excpt(nbuf);
+}
+#else
+static inline
+uint8_t dp_check_rx_from_reo_excpt(qdf_nbuf_t nbuf)
+{
+	return 0;
+}
+#endif
+
 /**
  * dp_rx_cksum_offload() - set the nbuf checksum as defined by hardware.
  * @pdev: dp_pdev handle
@@ -2523,6 +2543,10 @@ void dp_rx_cksum_offload(struct dp_pdev *pdev,
 	//HAL_RX_MSDU_DESC_IP_CHKSUM_FAIL_GET
 	//HAL_RX_MSDU_DESC_TCP_UDP_CHKSUM_FAIL_GET
 	uint32_t ip_csum_err, tcp_udp_csum_er, ip_frag;
+
+	/* Mark all packets coming from FW offload path as unchecked */
+	if (qdf_unlikely(dp_check_rx_from_reo_excpt(nbuf)))
+		goto bypass_tcp_udp;
 
 	hal_rx_tlv_csum_err_get(pdev->soc->hal_soc, rx_tlv_hdr, &ip_csum_err,
 				&tcp_udp_csum_er, &ip_frag);

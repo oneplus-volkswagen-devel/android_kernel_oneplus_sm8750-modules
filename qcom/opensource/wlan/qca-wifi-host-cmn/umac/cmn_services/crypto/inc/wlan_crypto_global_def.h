@@ -339,6 +339,9 @@ enum fils_erp_cryptosuite {
  *    -If set along with WLAN_HOST_CRYPTO_WPA2_ALLOW_NON_MLO_EHT_MFPC_SET,
  *     this mode supersedes.
  *
+ * @WLAN_HOST_CRYPTO_NONE_ALLOW_EHT: Allows connecting to NONE
+ * crypto params to allow EHT/MLO in NONE security.
+ *
  * @WLAN_HOST_CRYPTO_WPA3_SAE_ALLOW_NON_MLO_EHT_HnP: Connect to non-MLO/MLO
  * WPA3-SAE without support for H2E (or no RSNXE IE in beacon) in non-MLO EHT.
  * This bit results in connecting to both H2E and HnP APs in EHT only mode.
@@ -355,6 +358,7 @@ enum wlan_crypto_oem_eht_mlo_config {
 	WLAN_HOST_CRYPTO_WPA2_ALLOW_NON_MLO_EHT_MFPC_SET  = BIT(2),
 	WLAN_HOST_CRYPTO_WPA2_ALLOW_MLO_MFPC_SET          = BIT(3),
 	/* Bits 4-15 are reserved for future WPA2 security configs */
+	WLAN_HOST_CRYPTO_NONE_ALLOW_EHT                   = BIT(15),
 
 	WLAN_HOST_CRYPTO_WPA3_SAE_ALLOW_NON_MLO_EHT_HnP   = BIT(16),
 	WLAN_HOST_CRYPTO_WPA3_SAE_ALLOW_MLO_HnP           = BIT(17),
@@ -368,6 +372,9 @@ enum wlan_crypto_oem_eht_mlo_config {
 #define WLAN_CRYPTO_WPA2_OEM_EHT_CFG_PMF_ALLOWED(_cfg) \
 	 ((_cfg) & WLAN_HOST_CRYPTO_WPA2_ALLOW_NON_MLO_EHT_MFPC_SET || \
 	  (_cfg) & WLAN_HOST_CRYPTO_WPA2_ALLOW_MLO_MFPC_SET)
+
+#define WLAN_CRYPTO_NONE_OEM_EHT_CFG_ALLOWED(_cfg) \
+	 ((_cfg) & WLAN_HOST_CRYPTO_NONE_ALLOW_EHT)
 
 #define WLAN_CRYPTO_WPA3_SAE_OEM_EHT_CFG_IS_STRICT_H2E(_cfg) \
 	(((_cfg) & WLAN_HOST_CRYPTO_WPA3_SAE_ALLOW_NON_MLO_EHT_HnP || \
