@@ -6560,7 +6560,9 @@ static int __cam_isp_ctx_flush_req_in_top_state(
 			flush_req->req_id, ctx->ctx_id, ctx->link_hdl);
 		ctx->last_flush_req = flush_req->req_id;
 
+#ifndef OPLUS_FEATURE_CAMERA_COMMON
 		__cam_isp_ctx_trigger_reg_dump(CAM_HW_MGR_CMD_REG_DUMP_ON_FLUSH, ctx, NULL);
+#endif /* OPLUS_FEATURE_CAMERA_COMMON */
 
 		stop_args.ctxt_to_hw_map = ctx_isp->hw_ctx;
 		stop_isp.hw_stop_cmd = CAM_ISP_HW_STOP_IMMEDIATELY;
@@ -9931,7 +9933,6 @@ static int __cam_isp_ctx_apply_default_settings(
 	CAM_DBG(CAM_ISP,
 		"Apply default settings, number of previous continuous skipped frames: %d, ctx_id: %d",
 		fcg_tracker->num_skipped, ctx->ctx_id);
-
 	if (ctx_isp->init_pending_req_cnt) {
 		spin_lock_bh(&ctx->lock);
 		req = list_first_entry(&ctx->pending_req_list, struct cam_ctx_request,

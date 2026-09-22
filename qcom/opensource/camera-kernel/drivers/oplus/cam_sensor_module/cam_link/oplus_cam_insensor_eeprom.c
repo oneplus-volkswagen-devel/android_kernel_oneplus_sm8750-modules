@@ -347,4 +347,3 @@ int oplus_cam_eeprom_sc820cs(struct cam_eeprom_ctrl_t *e_ctrl, uint8_t *data)
 
 	return rc;
 }
-

@@ -3345,6 +3345,8 @@ int cam_soc_util_regulator_disable(struct regulator *rgltr,
 		return rc;
 	}
 
+	CAM_INFO(CAM_UTIL, "[%s] voltage disable", rgltr_name);
+
 	rc = cam_wrapper_regulator_disable(rgltr, rgltr_name);
 	if (rc) {
 		CAM_ERR(CAM_UTIL, "%s regulator disable failed", rgltr_name);
