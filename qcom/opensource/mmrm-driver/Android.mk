@@ -27,6 +27,7 @@ include $(CLEAR_VARS)
 # For incremental compilation
 LOCAL_SRC_FILES           := $(wildcard $(LOCAL_PATH)/**/*) $(wildcard $(LOCAL_PATH)/*)
 LOCAL_MODULE              := mmrm-module-symvers
+LOCAL_MULTILIB := first
 LOCAL_MODULE_STEM         := Module.symvers
 LOCAL_MODULE_KBUILD_NAME  := Module.symvers
 LOCAL_MODULE_PATH         := $(KERNEL_MODULES_OUT)
@@ -38,6 +39,7 @@ include $(CLEAR_VARS)
 # For incremental compilation
 LOCAL_SRC_FILES           := $(wildcard $(LOCAL_PATH)/**/*) $(wildcard $(LOCAL_PATH)/*)
 LOCAL_MODULE              := msm-mmrm.ko
+LOCAL_MULTILIB := first
 LOCAL_MODULE_KBUILD_NAME  := driver/msm-mmrm.ko
 LOCAL_MODULE_TAGS         := optional
 LOCAL_MODULE_DEBUG_ENABLE := true
@@ -63,6 +65,7 @@ ifeq ($(CONFIG_MSM_MMRM_VM),y)
 	# For incremental compilation
 	LOCAL_SRC_FILES           := $(wildcard $(LOCAL_PATH)/**/*) $(wildcard $(LOCAL_PATH)/*)
 	LOCAL_MODULE              := mmrm_vm_be.ko
+	LOCAL_MULTILIB := first
 	LOCAL_MODULE_KBUILD_NAME  := vm/be/mmrm_vm_be.ko
 	LOCAL_MODULE_TAGS         := optional
 	LOCAL_MODULE_DEBUG_ENABLE := true
