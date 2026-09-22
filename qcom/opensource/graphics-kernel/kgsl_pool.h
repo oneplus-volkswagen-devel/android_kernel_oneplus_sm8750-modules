@@ -15,7 +15,7 @@ static inline u32 kgsl_get_page_size(size_t size, unsigned int align)
 	u32 page_size;
 
 	if (!size)
-		return 0;
+	return 0;
 
 	for (page_size = rounddown_pow_of_two(size); page_size > PAGE_SIZE; page_size >>= 1)
 		if ((align >= ilog2(page_size)) && (size >= page_size))
@@ -100,4 +100,3 @@ void kgsl_exit_page_pools(void);
 
 #endif
 #endif /* __KGSL_POOL_H */
-

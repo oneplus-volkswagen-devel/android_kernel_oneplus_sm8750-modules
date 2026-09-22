@@ -108,3 +108,8 @@ config QCOM_KGSL_SYNX
 	  synx API for HW fence feature. This allows hardware fence inter-op
 	  between HW fence clients and SYNX clients. If not enabled, then
 	  kgsl will use msm_hw_fence APIs for hardware fence feature.
+
+config OPLUS_GPU_MINIDUMP
+	bool "Enable GPU_MINIDUMP in KGSL"
+	help
+	  Enable GPU_MINIDUMP in KGSL.

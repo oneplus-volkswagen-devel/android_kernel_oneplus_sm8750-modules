@@ -16,7 +16,7 @@
 #endif
 
 /* devfreq governor call window in usec */
-#define KGSL_GOVERNOR_CALL_INTERVAL 10000
+#define KGSL_GOVERNOR_CALL_INTERVAL 5000
 
 struct kgsl_power_stats {
 	u64 busy_time;

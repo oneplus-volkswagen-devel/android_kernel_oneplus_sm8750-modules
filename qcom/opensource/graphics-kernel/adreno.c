@@ -1436,6 +1436,17 @@ int adreno_device_probe(struct platform_device *pdev,
 	if (status)
 		goto err_unbind;
 
+	//FIXME: Temp solution
+	/*
+	 * Mark KGSL device as dma coherent when io-coherency
+	 * is enabled to skip cache operations for imported dma
+	 * buffers.
+	 */
+	if (kgsl_mmu_has_feature(device, KGSL_MMU_IO_COHERENT) &&
+		(adreno_is_gen8_0_0(adreno_dev) || adreno_is_gen8_0_1(adreno_dev)) &&
+		IS_ENABLED(CONFIG_QCOM_KGSL_IOCOHERENCY_DEFAULT))
+		device->dev->dma_coherent = true;
+
 	adreno_fence_trace_array_init(device);
 
 	/* Add CX_DBGC block to the regmap*/
@@ -1478,6 +1489,9 @@ int adreno_device_probe(struct platform_device *pdev,
 	adreno_profile_init(adreno_dev);
 
 	adreno_dev->perfcounter = false;
+
+	/* dcvs_boost is enabled by default in the kernel platform */
+	adreno_dev->dcvs_boost = true;
 
 	adreno_sysfs_init(adreno_dev);
 
@@ -2220,7 +2234,7 @@ int adreno_reset(struct kgsl_device *device, int fault)
 	int i;
 
 	if (gpudev->reset)
-		return gpudev->reset(adreno_dev);
+		return adreno_gpudev_reset(adreno_dev);
 
 	/*
 	 * Try soft reset first Do not do soft reset for a IOMMU fault (because
@@ -3676,6 +3690,13 @@ void adreno_gpufault_stats(struct adreno_device *adreno_dev,
 	}
 }
 
+static bool adreno_is_reset_recovery(struct kgsl_device *device)
+{
+	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
+
+	return test_bit(ADRENO_DEVICE_RESET_RECOVERY, &adreno_dev->priv);
+}
+
 static const struct kgsl_functable adreno_functable = {
 	/* Mandatory functions */
 	.suspend_context = adreno_suspend_context,
@@ -3717,6 +3738,7 @@ static const struct kgsl_functable adreno_functable = {
 	.dequeue_recurring_cmd = adreno_dequeue_recurring_cmd,
 	.set_isdb_breakpoint_registers = adreno_set_isdb_breakpoint_registers,
 	.create_hw_fence = adreno_create_hw_fence,
+	.is_reset_recovery = adreno_is_reset_recovery,
 };
 
 static const struct component_master_ops adreno_ops = {

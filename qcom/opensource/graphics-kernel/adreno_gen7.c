@@ -1996,6 +1996,8 @@ int gen7_perfcounter_update(struct adreno_device *adreno_dev,
 		/* No of triplet to add if restoring: 1 main + 1 control otherwise: 1 control */
 		pending_triplets++;
 		for (i = 0; i < perfcntr_list_len; i++) {
+			/* No of triplet to add if restoring: 1 main + 1 control otherwise: 1 control */
+			pending_triplets++;
 			if ((data[offset + 1] == reg->select) && (data[offset] == pipe)) {
 				select_reg_present = true;
 				break;
