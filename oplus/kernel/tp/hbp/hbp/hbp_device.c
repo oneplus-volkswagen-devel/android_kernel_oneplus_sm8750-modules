@@ -42,8 +42,12 @@
 #define HBP_IOCTRL_SPI_GET_PARA            _IO(HBP_IOCTRL_GROUP, 0x17)
 #define HBP_IOCTRL_SYNC_INPUT_TIME         _IO(HBP_IOCTRL_GROUP, 0x18)
 #define HBP_IOCTRL_UPDATE_FILM_INFO        _IO(HBP_IOCTRL_GROUP, 0x19)
+#define HBP_IOCTRL_GET_HEALTH_INFO         _IO(HBP_IOCTRL_GROUP, 0x1A)
+#define HBP_IOCTRL_SET_HEALTH_INFO         _IO(HBP_IOCTRL_GROUP, 0x1B)
 
 #define HBP_IOCTRL_PEN_STATUS              _IO(HBP_IOCTRL_GROUP, 0x21)
+/*fpGripStatus*/
+#define HBP_IOCTRL_FP_GRIP_STATUS          _IO(HBP_IOCTRL_GROUP, 0x22)
 
 extern void hbp_state_notify(struct hbp_core *hbp, int id, hbp_panel_event event);
 extern int hbp_register_notify_cb(struct hbp_device *hbp_dev, struct device *dev);
@@ -207,6 +211,9 @@ static int hbp_device_dt_parse(struct hbp_core *hbp, struct hbp_device *hbp_dev)
 	hbp_dev->pen_support = of_property_read_bool(np, "pen_support");
 	hbp_info("pen_support:%d\n", hbp_dev->pen_support);
 
+	hbp_dev->fp_grip_support = of_property_read_bool(np, "fp_grip_support");
+	hbp_info("fp_grip_support:%d\n", hbp_dev->fp_grip_support);
+
 	hbp_dev->create_with_power_on_support = of_property_read_bool(np, "create_with_power_on_support");
 	hbp_info("create_with_power_on_support:%d\n", hbp_dev->create_with_power_on_support);
 	memset(hbp_dev->clk_name, 0, 16);
@@ -354,6 +361,8 @@ struct hbp_device *hbp_device_create(void *priv,
 	init_waitqueue_head(&hbp_dev->drv_event);
 
 	hbp_queue_init(&hbp_dev->frame_queue);
+
+	hbp_healthinfo_init(&hbp_dev->monitor_data);
 
 	ret = hbp_device_dt_parse(hbp, hbp_dev);
 	if (ret < 0) {
@@ -1105,11 +1114,37 @@ static long hbp_ctrl_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigne
 			return ret;
 		}
 		break;
+	case HBP_IOCTRL_GET_HEALTH_INFO:
+		ret = hbp_healthinfo_read(usr.health_info.info, usr.health_info.info_size, &hbp_dev->monitor_data);
+		if (ret < 0) {
+			hbp_err("failed to get health info");
+			return -EFAULT;
+		}
+		break;
+	case HBP_IOCTRL_SET_HEALTH_INFO:
+		if (!usr.val) {
+			ret = hbp_healthinfo_clear(&hbp_dev->monitor_data);
+			if (ret < 0) {
+				hbp_err("failed to clear health info");
+				return -EFAULT;
+			}
+		}
+		break;
 	case HBP_IOCTRL_PEN_STATUS:
 		if (usr.val > 0) {
 			pen_resume(hbp_dev);
 		} else {
 			pen_suspend(hbp_dev);
+		}
+		break;
+	case HBP_IOCTRL_FP_GRIP_STATUS:
+		if (hbp_dev->fp_grip_support) {
+			if (usr.val == FP_GRIP_DISABLE_TIMEOUT || usr.val == FP_GRIP_DISABLE) {
+				hbp_dev->fp_grip_enable = FP_GRIP_DISABLE;
+			} else {
+				hbp_dev->fp_grip_enable = FP_GRIP_ENABLE;
+			}
+			hbp_info("transfer girp of fp pass state %s\n", hbp_dev->fp_grip_enable > 0 ? "enable" : "disable");
 		}
 		break;
 	default:
