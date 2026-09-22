@@ -3881,6 +3881,11 @@ try:
 		if (device_type == DEVICE_TYPE_NFG8011B)
 			chip->batt_nfg8011b = true;
 	}
+
+	if (chip->batt_nfg8011b && device_type != DEVICE_TYPE_NFG8011B &&
+	    device_type != DEVICE_TYPE_BQ27541)
+		chip->gauge_type_error = true;
+
 	chg_info("device_type : 0x%04x\n", device_type);
 }
 
@@ -7281,7 +7286,12 @@ static bool bq27541_sha256_hmac_result_check(struct chip_bq27541 *chip)
 		ret =  false;
 	} else {
 		chg_info("gauge authenticate succeed\n");
-		ret = true;
+		if (chip->gauge_type_error) {
+			chg_err("gauge_type_error\n");
+			ret = false;
+		} else {
+			ret = true;
+		}
 	}
 
 	return ret;
@@ -10262,6 +10272,12 @@ static int bq27541_driver_probe(struct i2c_client *client,
 	int ic_index;
 	struct oplus_chg_ic_cfg ic_cfg = { 0 };
 	int rc = 0;
+	struct device_node *node = oplus_get_node_by_child_gauge(client->dev.of_node);
+
+	if (node && of_property_read_bool(node, "skip_gauge_probe")) {
+		dev_err(&client->dev, "non-external gauge, skip i2c gauge driver probe\n");
+		return -ENODEV;
+	}
 
 	if (bq27541_need_level_shift(client->dev.of_node) &&
 	    !is_level_shift_available(client->dev.of_node)) {

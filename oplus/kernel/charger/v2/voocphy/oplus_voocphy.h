@@ -575,13 +575,13 @@ enum {
 	CHIP_ID_DEFAULT = 0,
 	CHIP_ID_SC8547,
 	CHIP_ID_HL7138,
+	CHIP_ID_NU2112A,
 };
 
 enum oplus_voocphy_ovp_ctrl {
 	MASTER_CP_ID,
 	SLAVE_CP_ID,
 	INVALID_CP_ID,
-	CHIP_ID_NU2112A,
 };
 
 enum oplus_fastchg_copycat_type {
@@ -592,7 +592,7 @@ enum oplus_fastchg_copycat_type {
 	FAST_COPYCAT_OVER_VBAT_CURRENT,
 	FAST_COPYCAT_VOOC20_REPEAT_FASTCHG_ORNOT,
 	FAST_COPYCAT_VOOC20_REPEAT_IS_VBUS_OK,
-	FAST_COPYCAT_SVOOC_IS_VBUS_OK_EXCEED_MAXCNT,
+	FAST_COPYCAT_IS_VBUS_OK_EXCEED_MAXCNT,
 	FAST_COPYCAT_SVOOC_MISS_ASK_CUR_LEVEL,
 	FAST_COPYCAT_VOOC20_NON_EXPECT_CMD,
 	FAST_COPYCAT_TYPE_MAX,
@@ -833,6 +833,7 @@ struct oplus_voocphy_manager {
 	struct batt_sys_curves *batt_sys_curv_by_tmprange;
 	unsigned char cur_sys_curv_idx;
 	int sys_curve_temp_idx;
+	int temp_region_cnt;
 
 	struct vooc_monitor_event mornitor_evt[MONITOR_EVENT_NUM];
 
@@ -946,6 +947,9 @@ struct oplus_voocphy_manager {
 	bool slave_ic_abnormal;
 	struct delayed_work clear_ic_abnormal_status_work;
 	struct oplus_chg_strategy *svooc_pcc_strategy;
+	bool cancel_primary_switch; /* add for cancel usb switch */
+	struct oplus_chg_strategy *ccd_strategy;
+	bool twice_request_current_enable;
 };
 
 struct oplus_voocphy_operations {
@@ -990,6 +994,8 @@ struct oplus_voocphy_operations {
 	int (*get_cp_error_type)(struct oplus_voocphy_manager *chip, int *err_type);
 	bool (*ic_is_abnormal)(struct oplus_voocphy_manager *chip);
 	int (*set_sstimeout_ucp_enable)(struct oplus_voocphy_manager *chip, bool enable);
+	int (*cp_set_vac2v2x_uvp)(struct oplus_voocphy_manager *chip, bool enable);
+	int (*set_usb_dischg_enable)(struct oplus_voocphy_manager *chip, bool enable);
 };
 
 #define VOOCPHY_LOG_BUF_LEN 1024

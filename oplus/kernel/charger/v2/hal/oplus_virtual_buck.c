@@ -2879,6 +2879,7 @@ static int oplus_chg_vb_get_vbus_collapse_status(struct oplus_chg_ic_dev *ic_dev
 }
 
 #define USBTEMP_DEFAULT_VOLT_VALUE_MV 950
+
 static int oplus_chg_vb_get_usb_temp_volt(struct oplus_chg_ic_dev *ic_dev, int *vol_l, int *vol_r)
 {
 	struct oplus_virtual_buck_ic *vb;
@@ -2906,6 +2907,7 @@ static int oplus_chg_vb_get_usb_temp_volt(struct oplus_chg_ic_dev *ic_dev, int *
 	}
 
 	rc = iio_read_channel_processed(vb->usbtemp_adc_l, &usbtemp_volt);
+
 	if (rc < 0) {
 		chg_err("usbtemp_volt_l read error\n");
 		*vol_l = usbtemp_volt_l_pre;
@@ -2933,6 +2935,7 @@ usbtemp_next:
 	}
 
 	rc = iio_read_channel_processed(vb->usbtemp_adc_r, &usbtemp_volt);
+
 	if (rc < 0) {
 		chg_err("usbtemp_volt_r read error\n");
 		*vol_r = usbtemp_volt_r_pre;
@@ -2997,6 +3000,67 @@ static int oplus_chg_vb_get_typec_role(struct oplus_chg_ic_dev *ic_dev,
 	return rc;
 }
 
+static int oplus_chg_vb_get_vdm_info(struct oplus_chg_ic_dev *ic_dev,
+				     u32 *data, int *cnt)
+{
+	struct oplus_virtual_buck_ic *vb;
+	int i;
+	int rc = -ENOTSUPP;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+	vb = oplus_chg_ic_get_drvdata(ic_dev);
+	for (i = 0; i < vb->child_num; i++) {
+		if (!func_is_support(&vb->child_list[i], OPLUS_IC_FUNC_BUCK_GET_VDM_INFO)) {
+			rc = -ENOTSUPP;
+			continue;
+		}
+		rc = oplus_chg_ic_func(vb->child_list[i].ic_dev,
+				       OPLUS_IC_FUNC_BUCK_GET_VDM_INFO,
+				       data, cnt);
+		if (rc < 0) {
+			if (rc != -ENOTSUPP)
+				chg_err("child ic[%d] get vdm info error, rc=%d\n", i, rc);
+			continue;
+		}
+		return 0;
+	}
+	if (rc == -ENOTSUPP)
+		chg_err("no child ic support get vdm info function\n");
+	return rc;
+}
+
+static int oplus_chg_vb_send_get_sink_cap(struct oplus_chg_ic_dev *ic_dev)
+{
+	struct oplus_virtual_buck_ic *vb;
+	int i;
+	int rc = -ENOTSUPP;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+	vb = oplus_chg_ic_get_drvdata(ic_dev);
+	for (i = 0; i < vb->child_num; i++) {
+		if (!func_is_support(&vb->child_list[i], OPLUS_IC_FUNC_BUCK_SEND_GET_SINK_CAP)) {
+			rc = -ENOTSUPP;
+			continue;
+		}
+		rc = oplus_chg_ic_func(vb->child_list[i].ic_dev,
+				       OPLUS_IC_FUNC_BUCK_SEND_GET_SINK_CAP);
+		if (rc < 0) {
+			if (rc != -ENOTSUPP)
+				chg_err("child ic[%d] send get sink cap error, rc=%d\n", i, rc);
+			continue;
+		}
+		return 0;
+	}
+	if (rc == -ENOTSUPP)
+		chg_err("no child ic support get vdm info function\n");
+	return rc;
+}
 
 static int oplus_chg_vb_get_typec_mode(struct oplus_chg_ic_dev *ic_dev,
 				       enum oplus_chg_typec_port_role_type *mode)
@@ -3884,6 +3948,62 @@ static int oplus_chg_vb_get_batt_btb_temp(struct oplus_chg_ic_dev *ic_dev,
 	return rc;
 }
 
+static int oplus_chg_vb_get_shaft_btb_temp(struct oplus_chg_ic_dev *ic_dev,
+					  int *shaft_btb_tbat)
+{
+	struct oplus_virtual_buck_ic *vb;
+	int i;
+	int rc = 0;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+	vb = oplus_chg_ic_get_drvdata(ic_dev);
+
+	for (i = 0; i < vb->child_num; i++) {
+		if (!func_is_support(&vb->child_list[i], OPLUS_IC_FUNC_BUCK_GET_SHAFT_BATT_BTB_TEMP)) {
+			rc = -ENOTSUPP;
+			continue;
+		}
+		rc = oplus_chg_ic_func(vb->child_list[i].ic_dev, OPLUS_IC_FUNC_BUCK_GET_SHAFT_BATT_BTB_TEMP, shaft_btb_tbat);
+		if (rc < 0)
+			chg_err("child ic[%d] can't get shaft btb status, rc=%d\n", i, rc);
+		break;
+	}
+
+	return rc;
+}
+
+int oplus_chg_vb_set_shfat_btb_over_status(struct oplus_chg_ic_dev *ic_dev, bool is_shaft_btb_over)
+{
+	struct oplus_virtual_buck_ic *vb;
+	int i;
+	int rc = 0;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+
+	vb = oplus_chg_ic_get_drvdata(ic_dev);
+
+	for (i = 0; i < vb->child_num; i++) {
+		if (!func_is_support(&vb->child_list[i], OPLUS_IC_FUNC_BUCK_PUSH_SHAFT_BATT_BTB_OVER)) {
+			rc = -ENOTSUPP;
+			continue;
+		}
+		rc = oplus_chg_ic_func(vb->child_list[i].ic_dev, OPLUS_IC_FUNC_BUCK_PUSH_SHAFT_BATT_BTB_OVER,
+			is_shaft_btb_over);
+		if (rc < 0) {
+			chg_err("child ic[%d] set shfat btb status error, rc=%d\n", i, rc);
+			return rc;
+		}
+	}
+
+	return 0;
+}
+
 static int oplus_chg_vb_get_fv(struct oplus_chg_ic_dev *ic_dev,
 					  int *fv_ma)
 {
@@ -4542,6 +4662,73 @@ static int oplus_chg_vb_iterm_check(struct oplus_chg_ic_dev *ic_dev, bool check)
 	return 0;
 }
 
+static int oplus_chg_vb_set_power_mos(struct oplus_chg_ic_dev *ic_dev, bool enable)
+{
+	struct oplus_virtual_buck_ic *vb;
+	int i;
+	int rc = 0;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+
+	vb = oplus_chg_ic_get_drvdata(ic_dev);
+
+	if (!vb || !vb->child_list) {
+		chg_err("vb or child_list is NULL");
+		return -ENODEV;
+	}
+
+	for (i = 0; i < vb->child_num; i++) {
+		if (!func_is_support(&vb->child_list[i], OPLUS_IC_FUNC_BUCK_SET_POWER_MOS_ENABLE)) {
+			rc = -ENOTSUPP;
+			continue;
+		}
+		rc = oplus_chg_ic_func(vb->child_list[i].ic_dev, OPLUS_IC_FUNC_BUCK_SET_POWER_MOS_ENABLE, enable);
+		if (rc < 0) {
+			chg_err("child ic[%d] iterm check %d error, rc=%d\n", i, enable, rc);
+			return rc;
+		}
+	}
+
+	return 0;
+}
+
+static int oplus_chg_vb_get_power_mos_status(struct oplus_chg_ic_dev *ic_dev, bool *enable)
+{
+	struct oplus_virtual_buck_ic *vb;
+	int i;
+	int rc = 0;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+
+	*enable = 0;
+	vb = oplus_chg_ic_get_drvdata(ic_dev);
+
+	if (!vb || !vb->child_list) {
+		chg_err("vb or child_list is NULL");
+		return -ENODEV;
+	}
+
+	for (i = 0; i < vb->child_num; i++) {
+		if (!func_is_support(&vb->child_list[i], OPLUS_IC_FUNC_BUCK_GET_POWER_MOS_ENABLE)) {
+			rc = -ENOTSUPP;
+			continue;
+		}
+		rc = oplus_chg_ic_func(vb->child_list[i].ic_dev, OPLUS_IC_FUNC_BUCK_GET_POWER_MOS_ENABLE, enable);
+		if (rc < 0)
+			chg_err("child ic[%d] get supplementary power mos status error, rc=%d\n", i, rc);
+		else
+			return 0;
+	}
+
+	return rc;
+}
+
 static void *oplus_chg_vb_get_func(struct oplus_chg_ic_dev *ic_dev, enum oplus_chg_ic_func func_id)
 {
 	void *func = NULL;
@@ -4767,6 +4954,14 @@ static void *oplus_chg_vb_get_func(struct oplus_chg_ic_dev *ic_dev, enum oplus_c
 		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_BUCK_GET_BATT_BTB_TEMP,
 					       oplus_chg_vb_get_batt_btb_temp);
 		break;
+	case OPLUS_IC_FUNC_BUCK_GET_SHAFT_BATT_BTB_TEMP:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_BUCK_GET_SHAFT_BATT_BTB_TEMP,
+					       oplus_chg_vb_get_shaft_btb_temp);
+		break;
+	case OPLUS_IC_FUNC_BUCK_PUSH_SHAFT_BATT_BTB_OVER:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_BUCK_PUSH_SHAFT_BATT_BTB_OVER,
+					       oplus_chg_vb_set_shfat_btb_over_status);
+		break;
 	case OPLUS_IC_FUNC_BUCK_GET_FV:
 		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_BUCK_GET_FV, oplus_chg_vb_get_fv);
 		break;
@@ -4830,6 +5025,18 @@ static void *oplus_chg_vb_get_func(struct oplus_chg_ic_dev *ic_dev, enum oplus_c
 		break;
 	case OPLUS_IC_FUNC_BUCK_ITEM_CHECK:
 		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_BUCK_ITEM_CHECK, oplus_chg_vb_iterm_check);
+		break;
+	case OPLUS_IC_FUNC_BUCK_SET_POWER_MOS_ENABLE:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_BUCK_SET_POWER_MOS_ENABLE, oplus_chg_vb_set_power_mos);
+		break;
+	case OPLUS_IC_FUNC_BUCK_GET_POWER_MOS_ENABLE:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_BUCK_GET_POWER_MOS_ENABLE, oplus_chg_vb_get_power_mos_status);
+		break;
+	case OPLUS_IC_FUNC_BUCK_GET_VDM_INFO:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_BUCK_GET_VDM_INFO, oplus_chg_vb_get_vdm_info);
+		break;
+	case OPLUS_IC_FUNC_BUCK_SEND_GET_SINK_CAP:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_BUCK_SEND_GET_SINK_CAP, oplus_chg_vb_send_get_sink_cap);
 		break;
 	default:
 		chg_err("this func(=%d) is not supported\n", func_id);
