@@ -109,6 +109,8 @@
 #define HEALTH_REPORT_RST_WD        "wd_rst"
 #define HEALTH_REPORT_RST_OTHER     "other_rst"
 #define HEALTH_REPORT_GLOVE_ENTER	"glove_enterTimes"
+#define HEALTH_REPORT_FW_FD			"firmware_fd"
+#define HEALTH_REPORT_BASELINE_NEGATIVE  "baseline_negative"
 
 #define FINGERPRINT_DOWN_DETECT 0X0f
 #define FINGERPRINT_UP_DETECT 0X1f
@@ -232,6 +234,7 @@ typedef enum {
 	MODE_EDGE,
 	MODE_GESTURE,
 	MODE_GLOVE,
+	MODE_RAINSTORM,
 	MODE_CHARGE,
 	MODE_GAME,
 	MODE_PALM_REJECTION,
@@ -867,6 +870,7 @@ struct monitor_data {
 
 	u32 smooth_level_chosen;
 	u32 sensitive_level_chosen;
+	u32 click_sensitive_level_chosen;
 	int RATE_MIN;
 	int below_rate_counts;
 	tp_rate tp_rate_type;
@@ -1060,6 +1064,7 @@ struct touchpanel_data {
 	bool tp_data_record_support;                        /*feature used to data record when get tp log*/
 	bool suspend_work_support;                          /*feature used to support suspend work queue*/
 	int glove_enable;                                   /*control state of glove gesture*/
+	int rainstorm_enable;                               /*control state of rainstorm mode*/
 	int pocket_prevent_mode;
 	int leather_cover_enable;                           /*control state of leather_cover gesture*/
 	bool force_bus_ready_support;                       /*force bus ready to true afer notify*/
@@ -1073,6 +1078,7 @@ struct touchpanel_data {
 	bool fp_grip_support;                               /* edge grip for fingerprint */
 	bool fp_grip_hold;
 	int  fp_grip_enable;
+	int idle_freq_enable;
 	u8 aiunit_game_get_num;
 	u8 aiunit_game_set_num;
 	int aiunit_game_enable;
@@ -1274,17 +1280,18 @@ struct touchpanel_data {
 	/*using for touchpanel speedup resume wq*/
 	struct workqueue_struct *speedup_resume_wq;
 	struct workqueue_struct *suspend_wq;
-#if IS_ENABLED(CONFIG_DRM_OPLUS_PANEL_NOTIFY)
+	#if IS_ENABLED(CONFIG_DRM_OPLUS_PANEL_NOTIFY) || IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER)
 	struct drm_panel *active_panel;
+	#endif
+	#if IS_ENABLED(CONFIG_DRM_OPLUS_PANEL_NOTIFY) || IS_ENABLED(CONFIG_DRM_MSM) || \
+		IS_ENABLED(CONFIG_DRM_OPLUS_NOTIFY) || IS_ENABLED(CONFIG_FB)
 	struct notifier_block fb_notif; /*register to control suspend/resume*/
-#elif IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER)
-	struct drm_panel *active_panel;
+	#endif
+	#if IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER)
 	void *notifier_cookie;
-#elif IS_ENABLED(CONFIG_OPLUS_MTK_DRM_GKI_NOTIFY)
+	#elif IS_ENABLED(CONFIG_OPLUS_MTK_DRM_GKI_NOTIFY)
 	struct notifier_block disp_notifier;
-#elif IS_ENABLED(CONFIG_DRM_MSM) || IS_ENABLED(CONFIG_DRM_OPLUS_NOTIFY) || IS_ENABLED(CONFIG_FB)
-	struct notifier_block fb_notif;	/*register to control suspend/resume*/
-#endif
+	#endif
 	notify_state notify_state;	/*detail notify state*/
 	wait_queue_head_t notify_wait; /*notify wait*/
 
@@ -1457,6 +1464,7 @@ struct oplus_touchpanel_operations {
 
 	void (*freq_hop_trigger)(void *chip_data); /*trigger frequency-hopping*/
 	void (*force_water_mode)(void *chip_data, bool enable); /*force enter water mode*/
+	void (*inject_wdt_reset)(void *chip_data, int value); /*inject watchdog reset*/
 	void (*get_water_mode)(void *chip_data); /*force enter water mode*/
 	void (*get_glove_mode)(void *chip_data, int *enable, int *count); /*force enter glove mode*/
 	void (*set_noise_modetest)(void *chip_data, bool enable);
@@ -1503,6 +1511,7 @@ struct oplus_touchpanel_operations {
 	int (*pen_downlink_msg)(void *chip_data, u32 cmd, u32 buf_len, u8 *buf);
 	int (*communicate_test)(void *chip_data);
 	void (*aiunit_game_info)(void *chip_data);
+	int (*set_idle_freq_mode)(bool enable);
 };
 
 struct aging_test_proc_operations {

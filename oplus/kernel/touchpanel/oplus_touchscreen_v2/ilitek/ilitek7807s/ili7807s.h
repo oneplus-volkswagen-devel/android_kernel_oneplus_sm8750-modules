@@ -171,7 +171,10 @@ extern bool ili_debug_en;
 #define CORE_VER_1430               0x01040300
 #define CORE_VER_1460               0x01040600
 #define CORE_VER_1470               0x01040700
-
+#define CORE_VER_1600               0x01060000
+#define CORE_VER_1700               0x01070000
+#define CORE_VER_2100               0x02010000
+#define DRIVER_VER_2090             0x02000900
 #define MAX_HEX_FILE_SIZE           (256*K)
 #define ILI_FILE_HEADER             256
 #define DLM_START_ADDRESS           0x20610
@@ -288,6 +291,7 @@ extern bool ili_debug_en;
 #define PROTOCOL_VER_560                    0x050600
 #define PROTOCOL_VER_570                    0x050700
 #define P5_X_READ_DATA_CTRL                 0xF6
+#define P5_X_GET_DRIVER_VERSION             0x28
 #define P5_X_GET_TP_INFORMATION             0x20
 #define P5_X_GET_KEY_INFORMATION            0x27
 #define P5_X_GET_PANEL_INFORMATION          0x29
@@ -346,6 +350,33 @@ extern bool ili_debug_en;
 #define TDDI_PC_LATCH_ADDR              0x51010
 #define TDDI_CHIP_RESET_ADDR                0x40050
 #define RAWDATA_NO_BK_SHIFT             8192
+#define ILI_FW_INFO_DRIVER_VERSION1     64
+#define ILI_FW_INFO_DRIVER_VERSION2     65
+#define ILI_FW_INFO_DRIVER_VERSION3     66
+#define ILI_FW_INFO_DRIVER_VERSION4     67
+#define ILI_V2080_WATER_FLAG            6
+#define ILI_V2080_THR_L8                4
+#define ILI_V2080_THR_H8                5
+
+enum ILI_DEBUG_BYTE {
+	ILI_THR_TD_L8 = 3,
+	ILI_THR_TD_H8 = 4,
+	ILI_THR_L8 = 5,
+	ILI_THR_H8 = 6,
+	ILI_THR_BASELIE_BTYE = 8,
+	ILI_MAX_DIFF_L8 = 9,
+	ILI_MAX_DIFF_H8 = 10,
+	ILI_MODE_BYTE = 13,
+	ILI_WATER_FLAG_BYTE = 14
+};
+
+enum DRIVER_VERSION_POS {
+	DRIVER_VERSION_POS1 = 13,
+	DRIVER_VERSION_POS2 = 14,
+	DRIVER_VERSION_POS3 = 15,
+	DRIVER_VERSION_POS4 = 16,
+	DRIVER_VERSION_POS_LEN = 17
+};
 
 enum TP_SPI_CLK_LIST {
 	TP_SPI_CLK_1M = 1000000,
@@ -779,12 +810,18 @@ struct ilitek_ts_data {
 	bool position_high_resolution;
 	bool eng_flow;
 	bool differ_mode;
+	bool ili_use_new_driver_version;
 
 	int glove_mode_flag;
 	int glove_mode_status;
 	u8 glove_mode;
 	u8 water_flag;
 	s16 thr;
+	bool switch_for_report;
+	u8 normal_mode;
+	s16 max_diff;
+	s16 thr_td;
+	u32 print_count;
 	atomic_t irq_stat;
 	atomic_t tp_reset;
 	atomic_t ice_stat;
@@ -922,6 +959,7 @@ struct ilitek_ic_info {
 	u32 fw_ver;
 	u32 core_ver;
 	u32 fw_mp_ver;
+	u32 support_driver_ver;
 	u32 max_count;
 	u32 reset_key;
 	u16 wtd_key;
@@ -962,6 +1000,7 @@ extern int ili_ic_check_busy(int count, int delay);
 extern int ili_ic_get_panel_info(void);
 extern int ili_ic_get_tp_info(void);
 extern int ili_ic_get_core_ver(void);
+extern int ili_ic_get_support_driver_ver(void);
 extern int ili_ic_get_protocl_ver(void);
 extern int ili_ic_get_fw_ver(void);
 extern int ili_ic_get_info(void);

@@ -687,6 +687,54 @@ out:
 	return ret;
 }
 
+int ili_ic_get_support_driver_ver(void)
+{
+	int ret = 0;
+	u8 cmd[2] = {0};
+	u8 buf[DRIVER_VERSION_POS_LEN] = {0};
+	int ver_len = DRIVER_VERSION_POS_LEN;
+
+	if (ilits->info_from_hex) {
+		buf[DRIVER_VERSION_POS1] = ilits->fw_info[ILI_FW_INFO_DRIVER_VERSION1];
+		buf[DRIVER_VERSION_POS2] = ilits->fw_info[ILI_FW_INFO_DRIVER_VERSION2];
+		buf[DRIVER_VERSION_POS3] = ilits->fw_info[ILI_FW_INFO_DRIVER_VERSION3];
+		buf[DRIVER_VERSION_POS4] = ilits->fw_info[ILI_FW_INFO_DRIVER_VERSION4];
+		goto out;
+	}
+
+	cmd[0] = P5_X_READ_DATA_CTRL;
+	cmd[1] = P5_X_GET_DRIVER_VERSION;
+
+	if (ilits->wrapper(cmd, sizeof(cmd), NULL, 0, OFF, OFF) < 0) {
+		ILI_ERR("Write pre cmd failed\n");
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (ilits->wrapper(&cmd[1], sizeof(u8), buf, ver_len, ON,
+			   OFF) < 0) {
+		ILI_ERR("Write driver version cmd failed\n");
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (buf[0] != P5_X_GET_DRIVER_VERSION) {
+		ILI_ERR("Invalid driver ver\n");
+		ret = -1;
+	}
+
+out:
+	if (!buf[DRIVER_VERSION_POS1]) {
+		ILI_INFO("get driver version failed\n");
+		return -EINVAL;
+	}
+	ILI_INFO("support driver version = %d.%d.%d.%d\n", buf[DRIVER_VERSION_POS1], buf[DRIVER_VERSION_POS2],
+		buf[DRIVER_VERSION_POS3], buf[DRIVER_VERSION_POS4]);
+	ilits->chip->support_driver_ver = buf[DRIVER_VERSION_POS1] << 24 | buf[DRIVER_VERSION_POS2] << 16 | buf[DRIVER_VERSION_POS3] << 8 | buf[DRIVER_VERSION_POS4];
+
+	return ret;
+}
+
 void ili_fw_uart_ctrl(u8 ctrl)
 {
 	u8 cmd[4] = {0};

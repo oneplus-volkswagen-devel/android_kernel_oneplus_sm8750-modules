@@ -1484,9 +1484,21 @@ void ili_report_ap_mode(u8 *buf, int len)
 		ILI_DBG("original x = %d, y = %d p = %d\n", xop, yop, touch_major);
 	}
 
-	ilits->glove_mode = buf[ilits->tp_data_len - 6] & 0x01;
-	ilits->water_flag = (buf[ilits->tp_data_len - 6] & 0x02) >> 1;
-	ilits->thr = (s16)((buf[ilits->tp_data_len - 5] << 8) | buf[ilits->tp_data_len - 4]);
+	if (ilits->ili_use_new_driver_version && ilits->chip->support_driver_ver == DRIVER_VER_2090) {
+		ilits->normal_mode = buf[ilits->tp_data_len - ILI_MODE_BYTE] & 0x01;
+		ilits->glove_mode = (buf[ilits->tp_data_len - ILI_MODE_BYTE] & 0x04) >> 2;
+		ilits->water_flag = (buf[ilits->tp_data_len - ILI_WATER_FLAG_BYTE] & 0x10) >> 4;
+		ilits->max_diff = (s16)((buf[ilits->tp_data_len - ILI_MAX_DIFF_H8] << 8) | buf[ilits->tp_data_len - ILI_MAX_DIFF_L8]);
+		ilits->thr = (s16)((buf[ilits->tp_data_len - ILI_THR_H8] << 8) | buf[ilits->tp_data_len - ILI_THR_L8]);
+		ilits->thr_td = (s16)((buf[ilits->tp_data_len - ILI_THR_TD_H8] << 8) | buf[ilits->tp_data_len - ILI_THR_TD_L8]);
+		TPD_SPECIFIC_PRINT(ilits->print_count, "normal_mode = %d, glove_mode = %d, water_flag = %d, max_diff = %d, thr = %d, thr_td = %d\n",
+			ilits->normal_mode, ilits->glove_mode, ilits->water_flag, ilits->max_diff, ilits->thr, ilits->thr_td);
+	} else {
+		ilits->glove_mode = buf[ilits->tp_data_len - ILI_V2080_WATER_FLAG] & 0x01;
+		ilits->water_flag = (buf[ilits->tp_data_len - ILI_V2080_WATER_FLAG] & 0x02) >> 1;
+		ilits->thr = (s16)((buf[ilits->tp_data_len - ILI_V2080_THR_H8] << 8) | buf[ilits->tp_data_len - ILI_V2080_THR_L8]);
+	}
+
 	if (ilits->ts->health_monitor_support) {
 		if (ilits->glove_mode_flag == 0 && ilits->glove_mode == 1) {
 			ILI_DBG("glove_mode changed from 0 to 1\n");
@@ -1503,6 +1515,14 @@ void ili_report_ap_mode(u8 *buf, int len)
 	}
 	ILI_DBG("glove_mode = %d, water_flag = %d, thr = %d\n", ilits->glove_mode, ilits->water_flag, ilits->thr);
 	ilitek_tddi_touch_send_debug_data(buf, len);
+	if (ilits->ili_use_new_driver_version && ilits->chip->support_driver_ver == DRIVER_VER_2090 && ilits->position_high_resolution == ON) {
+		if (((buf[len - ILI_THR_BASELIE_BTYE]&0x04) >> 2) == 1) {
+			if (ili_set_tp_data_len(DATA_FORMAT_DEBUG, false, NULL) < 0) {
+				ILI_ERR("Failed to switch debug mode\n");
+			}
+			ilits->switch_for_report = true;
+		}
+	}
 }
 
 void ili_debug_mode_report_point(u8 *buf, int len)
@@ -1601,14 +1621,31 @@ void ili_debug_mode_report_point(u8 *buf, int len)
 			ILI_DBG("original x = %d, y = %d p = %d\n", xop, yop, p[i]);
 		}
 	}
+	if (ilits->ili_use_new_driver_version && ilits->chip->support_driver_ver == DRIVER_VER_2090 && ilits->switch_for_report) {
+		ilitek_get_rawdata();
+		if (ili_set_tp_data_len(DATA_FORMAT_DEMO, false, NULL) < 0) {
+			ILI_ERR("Failed to switch demo mode\n");
+		}
+	}
 }
 
 void ili_report_debug_mode(u8 *buf, int len)
 {
-	ilits->glove_mode = buf[ilits->tp_data_len - 6] & 0x01;
-	ilits->water_flag = (buf[ilits->tp_data_len - 6] & 0x02) >> 1;
-	ilits->thr = (s16)((buf[ilits->tp_data_len - 5] << 8) | buf[ilits->tp_data_len - 4]);
-	ILI_DBG("glove_mode = %d, water_flag = %d, thr = %d\n", ilits->glove_mode, ilits->water_flag, ilits->thr);
+	if (ilits->ili_use_new_driver_version && ilits->chip->support_driver_ver == DRIVER_VER_2090) {
+		ilits->normal_mode = buf[ilits->tp_data_len - ILI_MODE_BYTE] & 0x01;
+		ilits->glove_mode = (buf[ilits->tp_data_len - ILI_MODE_BYTE] & 0x04) >> 2;
+		ilits->water_flag = (buf[ilits->tp_data_len - ILI_WATER_FLAG_BYTE] & 0x10) >> 4;
+		ilits->max_diff = (s16)((buf[ilits->tp_data_len - ILI_MAX_DIFF_H8] << 8) | buf[ilits->tp_data_len - ILI_MAX_DIFF_L8]);
+		ilits->thr = (s16)((buf[ilits->tp_data_len - ILI_THR_H8] << 8) | buf[ilits->tp_data_len - ILI_THR_L8]);
+		ilits->thr_td = (s16)((buf[ilits->tp_data_len - ILI_THR_TD_H8] << 8) | buf[ilits->tp_data_len - ILI_THR_TD_L8]);
+		ILI_DBG("normal_mode = %d, glove_mode = %d, water_flag = %d, max_diff = %d, thr = %d, thr_td = %d\n",
+			ilits->normal_mode, ilits->glove_mode, ilits->water_flag, ilits->max_diff, ilits->thr, ilits->thr_td);
+	} else {
+		ilits->glove_mode = buf[ilits->tp_data_len - ILI_V2080_WATER_FLAG] & 0x01;
+		ilits->water_flag = (buf[ilits->tp_data_len - ILI_V2080_WATER_FLAG] & 0x02) >> 1;
+		ilits->thr = (s16)((buf[ilits->tp_data_len - ILI_V2080_THR_H8] << 8) | buf[ilits->tp_data_len - ILI_V2080_THR_L8]);
+		ILI_DBG("glove_mode = %d, water_flag = %d, thr = %d\n", ilits->glove_mode, ilits->water_flag, ilits->thr);
+	}
 	ili_debug_mode_report_point(buf + 5, len);
 	ilitek_tddi_touch_send_debug_data(buf, len);
 }
@@ -2297,6 +2334,7 @@ int ili_set_tp_data_len(int format, bool send, u8 *data)
 	u8 cmd[10] = {0}, ctrl = 0, debug_ctrl = 0;
 	u16 self_key = 2;
 	int ret = 0, tp_mode = ilits->actual_tp_mode, len = 0, geture_info_length = 0, demo_mode_packet_len = 0;
+	ilits->switch_for_report = false;
 
 	if (ilits->position_high_resolution == OFF) {
 		geture_info_length = P5_X_GESTURE_INFO_LENGTH;
@@ -4478,6 +4516,10 @@ int ilitek7807s_spi_probe(struct spi_device *spi)
 	ts->tp_resume_order = LCD_TP_RESUME;
 	ts->esd_handle_support = false;
 	/*get default info from dts*/
+	if (ts->dev && ts->dev->of_node) {
+		ilits->ili_use_new_driver_version = of_property_read_bool(ts->dev->of_node, "ili_use_new_driver_version");
+		ILI_INFO("ili_use_new_driver_version = %d\n", ilits->ili_use_new_driver_version);
+	}
 	ilits->hw_res->reset_gpio = ts->hw_res.reset_gpio;
 	ilits->hw_res->irq_gpio = ts->hw_res.irq_gpio;
 	ilits->tp_int = ts->hw_res.irq_gpio;
