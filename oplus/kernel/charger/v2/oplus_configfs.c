@@ -604,6 +604,30 @@ static ssize_t typec_cc_orientation_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(typec_cc_orientation);
 
+#define VDM_INFO_MAX 5
+static ssize_t vdm_info_show(struct device *dev,
+			     struct device_attribute *attr, char *buf)
+{
+	struct oplus_configfs_device *chip = dev->driver_data;
+	u32 vdm_info[VDM_INFO_MAX] = { 0 };
+	int vdm_cnt = VDM_INFO_MAX;
+	ssize_t count = 0;
+	int rc;
+	int i;
+
+	rc = oplus_wired_get_vdm_info(chip->wired_topic, vdm_info, &vdm_cnt);
+	/* vdm_info[0] is protocol header, skip it */
+	if (rc < 0 || vdm_cnt <= 1)
+		return scnprintf(buf, PAGE_SIZE, "\n");
+
+	for (i = 1; i < vdm_cnt; i++)
+		count += scnprintf(buf + count, PAGE_SIZE - count,
+			"0x%08x ", vdm_info[i]);
+	count += scnprintf(buf + count, PAGE_SIZE - count, "\n");
+	return count;
+}
+static DEVICE_ATTR_RO(vdm_info);
+
 static struct device_attribute *oplus_usb_attributes[] = {
 	&dev_attr_otg_online,
 	&dev_attr_otg_switch,
@@ -612,6 +636,7 @@ static struct device_attribute *oplus_usb_attributes[] = {
 	&dev_attr_fast_chg_type,
 	&dev_attr_usbtemp_volt_l,
 	&dev_attr_usbtemp_volt_r,
+	&dev_attr_vdm_info,
 	NULL
 };
 
@@ -929,8 +954,10 @@ static ssize_t historic_soh_date_store(struct device *dev,
 	}
 
 	ret = oplus_set_histrioc_soh_date(chip->gauge_topic, pagedata1);
-	if (ret < 0)
+	if (ret < 0) {
 		chg_err("set battery first usage date error");
+		return ret;
+	}
 
 	return count;
 }
@@ -2941,6 +2968,114 @@ static ssize_t bt_info_store(struct device *dev, struct device_attribute *attr, 
 }
 static DEVICE_ATTR_WO(bt_info);
 
+static ssize_t wlspen_info_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct oplus_configfs_device *chip = NULL;
+
+	if (!dev || !buf) {
+		chg_err("dev or buf is NULL\n");
+		return -EINVAL;
+	}
+
+	chip = dev->driver_data;
+	if (!chip || !chip->wls_topic) {
+		chg_err("chip or wls is NULL\n");
+		return -ENODEV;
+	}
+
+	count = oplus_chg_wls_wlspen_info_store(chip->wls_topic, buf, count);
+
+	return count;
+}
+static DEVICE_ATTR_WO(wlspen_info);
+
+static ssize_t wlspen_soc_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct oplus_configfs_device *chip = NULL;
+	union mms_msg_data data = { 0 };
+	int rc;
+
+	if (!dev || !buf) {
+		chg_err("dev or buf is NULL\n");
+		return -EINVAL;
+	}
+
+	chip = dev->driver_data;
+	if (!chip || !chip->wls_topic) {
+		chg_err("chip or wls is NULL\n");
+		return -ENODEV;
+	}
+
+	rc = oplus_mms_get_item_data(chip->wls_topic, WLS_ITEM_WLSPEN_SOC, &data, true);
+	if (rc < 0) {
+		chg_err("can't get wlspen_soc, rc=%d\n", rc);
+		return rc;
+	}
+
+	return snprintf(buf, 16, "%d\n", data.intval);
+}
+
+static ssize_t wlspen_soc_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct oplus_configfs_device *chip = NULL;
+
+	if (!dev || !buf) {
+		chg_err("dev or buf is NULL\n");
+		return -EINVAL;
+	}
+
+	chip = dev->driver_data;
+	if (!chip || !chip->wls_topic) {
+		chg_err("chip or wls is NULL\n");
+		return -ENODEV;
+	}
+
+	count = oplus_chg_wls_wlspen_soc_store(chip->wls_topic, buf, count);
+
+	return count;
+}
+static DEVICE_ATTR_RW(wlspen_soc);
+
+static ssize_t wlspen_dischg_soc_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct oplus_configfs_device *chip = NULL;
+
+	if (!dev || !buf) {
+		chg_err("dev or buf is NULL\n");
+		return -EINVAL;
+	}
+
+	chip = dev->driver_data;
+	if (!chip || !chip->wls_topic) {
+		chg_err("chip or wls is NULL\n");
+		return -ENODEV;
+	}
+
+	count = oplus_chg_wls_wlspen_dischg_soc_store(chip->wls_topic, buf, count);
+
+	return count;
+}
+static DEVICE_ATTR_WO(wlspen_dischg_soc);
+
+static ssize_t ping_time_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct oplus_configfs_device *chip = dev->driver_data;
+	union mms_msg_data data = { 0 };
+	int ping_time = 0;
+	int rc;
+
+	if (chip->wls_topic) {
+		rc = oplus_mms_get_item_data(chip->wls_topic, WLS_ITEM_PING_TIME, &data, true);
+		if (rc < 0)
+			chg_err("can't get ping time, rc=%d\n", rc);
+		else
+			ping_time = data.intval;
+	}
+
+	return snprintf(buf, 16, "%d\n", ping_time);
+}
+static DEVICE_ATTR_RO(ping_time);
+
 #ifdef WLS_QI_DEBUG
 ssize_t __attribute__((weak))
 oplus_chg_wls_upgrade_fw_show(struct oplus_mms *mms, char *buf)
@@ -2994,6 +3129,10 @@ static struct device_attribute *oplus_wireless_attributes[] = {
 	&dev_attr_status_keep,
 	&dev_attr_rx_disable,
 	&dev_attr_bt_info,
+	&dev_attr_wlspen_info,
+	&dev_attr_wlspen_soc,
+	&dev_attr_wlspen_dischg_soc,
+	&dev_attr_ping_time,
 #ifdef WLS_QI_DEBUG
 	&dev_attr_upgrade_firmware,
 #endif
@@ -4281,6 +4420,30 @@ static ssize_t byb_vout_store(struct device *dev, struct device_attribute *attr,
 }
 static DEVICE_ATTR_RW(byb_vout);
 
+static ssize_t update_secondary_smooth_map_store(struct device *dev,
+						 struct device_attribute *attr,
+						 const char *buf, size_t count)
+{
+	struct oplus_configfs_device *chip = dev->driver_data;
+	int val;
+	int rc;
+
+	if (!chip || !is_comm_topic_available(chip))
+		return -EINVAL;
+	if (kstrtos32(buf, 0, &val))
+		return -EINVAL;
+	if (val != 0 && val != 1)
+		return -EINVAL;
+
+	rc = oplus_comm_smooth_strategy_rus_set_secondary_smooth_map(
+		chip->comm_topic, !!val);
+	if (rc < 0)
+		return rc;
+
+	return count;
+}
+static DEVICE_ATTR_WO(update_secondary_smooth_map);
+
 static struct device_attribute *oplus_common_attributes[] = {
 	&dev_attr_common,
 	&dev_attr_boot_completed,
@@ -4307,6 +4470,7 @@ static struct device_attribute *oplus_common_attributes[] = {
 	&dev_attr_lpd_config,
 	&dev_attr_byb_status,
 	&dev_attr_byb_vout,
+	&dev_attr_update_secondary_smooth_map,
 	NULL
 };
 

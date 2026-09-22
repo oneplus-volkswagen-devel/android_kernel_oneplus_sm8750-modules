@@ -1494,6 +1494,47 @@ static int oplus_chg_vc_get_vac(struct oplus_chg_ic_dev *ic_dev, int *vac)
 	return err;
 }
 
+static int oplus_chg_vc_get_reverse_vout(struct oplus_chg_ic_dev *ic_dev, int *vac)
+{
+	struct oplus_virtual_cp_ic *vc;
+	int i;
+	int rc;
+	int err = -ENOTSUPP;
+	int vol;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+
+	vc = oplus_chg_ic_get_drvdata(ic_dev);
+	if (vc == NULL) {
+		chg_err("virtual_cp is NULL");
+		return -ENODEV;
+	}
+	if (vc->child_list == NULL) {
+		chg_err("child_list is NULL\n");
+		return -ENODATA;
+	}
+	for (i = 0; i < vc->child_num; i++) {
+		if (vc->child_list[i].ic_dev == NULL) {
+			chg_debug("child ic_dev[%d] is NULL, skip\n", i);
+			continue;
+		}
+		rc = oplus_chg_ic_func(vc->child_list[i].ic_dev,
+			OPLUS_IC_FUNC_CP_GET_REVERSE_VOUT, &vol);
+		if (rc < 0 && rc != -ENOTSUPP) {
+			chg_err("child ic[%d] get reverse vout error, rc=%d\n", i, rc);
+			err = rc;
+		} else if (rc >= 0) {
+			*vac = vol;
+			return 0;
+		}
+	}
+
+	return err;
+}
+
 static int oplus_chg_vc_set_work_start_strategy(struct oplus_virtual_cp_ic *vc)
 {
 	int open_flag;
@@ -1692,6 +1733,31 @@ static int oplus_chg_vc_set_sstimeout_ucp_enable(struct oplus_chg_ic_dev *ic_dev
 			OPLUS_IC_FUNC_CP_SET_SSTIMEOUT_UCP_ENABLE, enable);
 	if (rc < 0 && rc != -ENOTSUPP)
 		chg_err("main cp set sstimeout ucp err, enable = %d, rc=%d\n", enable, rc);
+	return rc;
+}
+
+static int oplus_chg_vc_set_pmid2vout_ovp_enable(struct oplus_chg_ic_dev *ic_dev, bool enable)
+{
+	struct oplus_virtual_cp_ic *vc;
+	int rc = 0;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+
+	vc = oplus_chg_ic_get_drvdata(ic_dev);
+	if (vc == NULL) {
+		chg_err("oplus virtual cp is NULL");
+		return -ENODEV;
+	}
+
+	if (vc->main_cp < 0 || vc->main_cp >= vc->child_num)
+		return -EINVAL;
+	rc = oplus_chg_ic_func(vc->child_list[vc->main_cp].ic_dev,
+			OPLUS_IC_FUNC_CP_SET_PMID2VOUT_OVP_ENABLE, enable);
+	if (rc < 0 && rc != -ENOTSUPP)
+		chg_err("main cp set pmid2vout ovp err, enable = %d, rc=%d\n", enable, rc);
 	return rc;
 }
 
@@ -2081,6 +2147,9 @@ static void *oplus_chg_vc_get_func(struct oplus_chg_ic_dev *ic_dev, enum oplus_c
 	case OPLUS_IC_FUNC_CP_GET_VAC:
 		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_CP_GET_VAC, oplus_chg_vc_get_vac);
 		break;
+	case OPLUS_IC_FUNC_CP_GET_REVERSE_VOUT:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_CP_GET_REVERSE_VOUT, oplus_chg_vc_get_reverse_vout);
+		break;
 	case OPLUS_IC_FUNC_CP_SET_WORK_START:
 		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_CP_SET_WORK_START, oplus_chg_vc_set_work_start);
 		break;
@@ -2105,6 +2174,10 @@ static void *oplus_chg_vc_get_func(struct oplus_chg_ic_dev *ic_dev, enum oplus_c
 	case OPLUS_IC_FUNC_CP_SET_SSTIMEOUT_UCP_ENABLE:
 		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_CP_SET_SSTIMEOUT_UCP_ENABLE,
 			oplus_chg_vc_set_sstimeout_ucp_enable);
+		break;
+	case OPLUS_IC_FUNC_CP_SET_PMID2VOUT_OVP_ENABLE:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_CP_SET_PMID2VOUT_OVP_ENABLE,
+			oplus_chg_vc_set_pmid2vout_ovp_enable);
 		break;
 	default:
 		chg_err("this func(=%d) is not supported\n", func_id);

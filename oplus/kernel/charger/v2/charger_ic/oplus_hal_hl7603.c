@@ -355,16 +355,20 @@ error:
 
 
 #define HL7603_CHIP_ID_REV	0xB3	/* the HL7603 default value of address 0x0 */
+#define HL7603A_CHIP_ID_REV	0xB4	/* the HL7603A default value of address 0x0 */
 static int hl7603_hardware_init(struct chip_hl7603 *chip)
 {
 	int rc = 0;
 	u8 buf[HL7603_REG_CNT + 4] = { 0 };
 
 	rc = hl7603_read(chip, DEV_ID_REV_REG, (unsigned int *)&buf[6]);
-	if (rc >= 0 && buf[6] != HL7603_CHIP_ID_REV) {
+	if (rc >= 0) {
 		chip->chip_id = buf[6];
-		chg_info("chip_id 0x%x is not HL7603\n", chip->chip_id);
-		return 0;
+		if (chip->chip_id != HL7603_CHIP_ID_REV &&
+		    chip->chip_id != HL7603A_CHIP_ID_REV) {
+			chg_info("chip_id 0x%x not supported\n", chip->chip_id);
+			return 0;
+		}
 	}
 
 	rc = hl7603_write(chip, HL7603_VOUT_SEL_REG, vout_mv_to_reg(chip->vout_mv));
@@ -808,6 +812,7 @@ static const struct test_feature_cfg fpga_boost_test_cfg = {
 	.name = "fpga_boost_test",
 	.test_func = test_kit_fpga_boost_test,
 };
+
 #endif
 
 #ifdef CONFIG_OPLUS_CHG_IC_DEBUG

@@ -256,10 +256,7 @@ static bool oplus_monitor_all_topic_is_ready(struct oplus_monitor *chip)
 		chg_err("gauge topic not ready\n");
 		return false;
 	}
-	if (!chip->vooc_topic) {
-		chg_err("vooc topic not ready\n");
-		return false;
-	}
+
 	if (!chip->comm_topic) {
 		chg_err("common topic not ready\n");
 		return false;
@@ -1143,6 +1140,8 @@ static void oplus_monitor_wired_subs_callback(struct mms_subscribe *subs,
 			chip->notify_flag = 0;
 			if (!chip->wired_online)
 				oplus_chg_track_record_dual_chan_end(chip);
+			else
+				chip->curr_derating_trig = false;
 			oplus_chg_track_update_break_ui_online();
 			schedule_work(&chip->charge_info_update_work);
 			schedule_work(&chip->wired_plugin_work);
@@ -2133,6 +2132,12 @@ static struct mms_item oplus_monitor_item[] = {
 	{
 		.desc = {
 			.item_id = ERR_ITEM_BS_INFO,
+			.str_data = true,
+		}
+	},
+	{
+		.desc = {
+			.item_id = ERR_ITEM_CYCLE_CURRENT_DERATING,
 			.str_data = true,
 		}
 	},

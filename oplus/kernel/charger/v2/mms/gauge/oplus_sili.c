@@ -1112,6 +1112,8 @@ void oplus_gauge_get_ratio_value(struct oplus_mms *mms)
 	union mms_msg_data data = { 0 };
 	int *cc = 0, *ratio = 0, counts = 0;
 	int rc = 0;
+	int gauge_type;
+	int soh_cc;
 	struct oplus_mms_gauge *chip;
 
 	if (mms == NULL) {
@@ -1140,6 +1142,17 @@ void oplus_gauge_get_ratio_value(struct oplus_mms *mms)
 		*cc = 0;
 	} else {
 		*cc = data.intval;
+	}
+
+	/* If it's platform gauge project, use soh from oplus_gauge_get_dec_cv_soh to replace cc */
+	gauge_type = oplus_get_gauge_type();
+	chg_info("gauge_type=%d\n", gauge_type);
+	if (gauge_type == GAUGE_TYPE_PLATFORM) {
+		soh_cc = oplus_gauge_get_dec_cv_soh(mms);
+		chg_info("soh_cc=%d\n", soh_cc);
+		if (soh_cc >= 0) {
+			*cc = soh_cc;
+		}
 	}
 
 	if (*cc <= 0 || *cc >= INVALID_CC_VALUE) {
@@ -1920,6 +1933,18 @@ struct device_node *oplus_get_node_by_type(struct device_node *father_node)
 			node = sub_node;
 	}
 	return node;
+}
+
+struct device_node *oplus_get_node_by_child_gauge(struct device_node *father_node)
+{
+	struct device_node *node = of_find_node_by_path("/soc/oplus_chg_core");
+
+	if (node == NULL)
+		return father_node;
+	if (!of_property_read_bool(node, "oplus,gauge_ic_by_child_node"))
+		return father_node;
+
+	return oplus_get_node_by_type(father_node);
 }
 
 
@@ -3406,12 +3431,48 @@ static int oplus_mms_gauge_push_soh_coeff(struct oplus_mms_gauge *chip, int coef
 	return rc;
 }
 
+#define DEEP_TERM_VOLT_UPDATE_DELAY_MS 2000
+#define DEEP_TERM_VOLT_UPDATE_RETRY_COUNT 5
+void oplus_mms_gauge_set_deep_term_volt_work(struct work_struct *work)
+{
+	int current_volt = 0;
+	static int retry_count = 0;
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct oplus_mms_gauge *chip =
+		container_of(dwork, struct oplus_mms_gauge, set_deep_term_volt_work);
+
+	if (chip == NULL || !chip->deep_spec.support)
+		return;
+
+	oplus_mms_gauge_set_deep_term_volt(chip->gauge_topic, chip->deep_spec.config.term_voltage);
+
+	current_volt = oplus_gauge_get_deep_term_volt(chip);
+	chg_info("current_volt: %d, term_voltage: %d\n", current_volt, chip->deep_spec.config.term_voltage);
+
+	if (current_volt != chip->deep_spec.config.term_voltage) {
+		if (retry_count < DEEP_TERM_VOLT_UPDATE_RETRY_COUNT) {
+			retry_count++;
+			cancel_delayed_work(&chip->set_deep_term_volt_work);
+			schedule_delayed_work(&chip->set_deep_term_volt_work, msecs_to_jiffies(DEEP_TERM_VOLT_UPDATE_DELAY_MS));
+		} else {
+			retry_count = 0;
+			chg_err("deep term voltage update failed, retry count: %d\n", retry_count);
+		}
+	} else {
+		retry_count = 0;
+		chg_info("deep term voltage update success, current_volt: %d, term_voltage: %d\n", current_volt, chip->deep_spec.config.term_voltage);
+	}
+
+	return;
+}
+
 #define DEEP_DISCHG_UPDATE_VOLT_DELTA 100
 int oplus_gauge_term_voltage_vote_callback(struct votable *votable, void *data, int volt, const char *client,
 						  bool step)
 {
 	struct oplus_mms_gauge *chip = data;
 	int current_volt = 0;
+	int gauge_type = 0;
 	int i = 0;
 
 	if (!chip->deep_spec.support)
@@ -3423,6 +3484,7 @@ int oplus_gauge_term_voltage_vote_callback(struct votable *votable, void *data, 
 	}
 
 	current_volt = oplus_gauge_get_deep_term_volt(chip);
+	gauge_type = oplus_get_gauge_type();
 
 	for (i = chip->deep_spec.term_coeff_size - 1; i >= 0; i--) {
 		if (volt >= chip->deep_spec.term_coeff[i].term_voltage) {
@@ -3436,7 +3498,11 @@ int oplus_gauge_term_voltage_vote_callback(struct votable *votable, void *data, 
 	oplus_mms_gauge_push_soh_coeff(chip, chip->deep_spec.config.current_soh_coeff);
 	chg_info("term voltage vote client %s, volt = %d\n", client, volt);
 	chip->deep_spec.config.term_voltage = volt;
-	if (current_volt != volt || step) {
+
+	if (gauge_type == GAUGE_TYPE_PLATFORM) {
+		cancel_delayed_work_sync(&chip->set_deep_term_volt_work);
+		schedule_delayed_work(&chip->set_deep_term_volt_work, msecs_to_jiffies(0));
+	} else if (current_volt != volt || step) {
 		oplus_mms_gauge_set_deep_term_volt(chip->gauge_topic, volt);
 		cancel_delayed_work(&chip->sili_term_volt_effect_check_work);
 		schedule_delayed_work(&chip->sili_term_volt_effect_check_work, msecs_to_jiffies(2000));
@@ -3461,4 +3527,3 @@ int oplus_target_term_voltage_vote_callback(struct votable *votable, void *data,
 	chip->deep_spec.config.target_term_voltage = volt;
 	return 0;
 }
-

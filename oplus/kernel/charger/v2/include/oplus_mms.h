@@ -35,6 +35,7 @@ enum oplus_mms_type {
 	OPLUS_MMS_TYPE_LEVEL_SHIFT,
 	OPLUS_MMS_TYPE_RETENTION,
 	OPLUS_MMS_TYPE_PLC,
+	OPLUS_MMS_TYPE_DISCHG_BOOST,
 };
 
 enum mms_msg_type {

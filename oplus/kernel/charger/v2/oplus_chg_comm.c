@@ -269,6 +269,13 @@ struct oplus_comm_config {
 	bool support_hw_iterm_check;
 } __attribute__ ((packed));
 
+struct uv_dec_speed_entry {
+	s32 temp;
+	u32 speed;
+};
+
+#define UV_DEC_SPEED_ENTRY_U32_CNT	(sizeof(struct uv_dec_speed_entry) / sizeof(u32))
+
 struct ui_soc_decimal {
 	int ui_soc_decimal;
 	int ui_soc_integer;
@@ -331,6 +338,8 @@ struct oplus_chg_comm {
 
 	struct oplus_comm_spec_config spec;
 	struct oplus_comm_config config;
+	int uv_dec_speed_tbl_cnt;
+	struct uv_dec_speed_entry *uv_dec_speed_tbl;
 	struct ui_soc_decimal soc_decimal;
 	struct reserve_soc_data rsd;
 
@@ -531,6 +540,7 @@ struct oplus_chg_comm {
 	int flash_mode;
 	struct delayed_work flash_mode_boost_work;
 	struct delayed_work offline_clean_work;
+	const int (*ui_soc_smooth_table)[RESERVE_SOC_MAX];
 };
 
 typedef struct {
@@ -3182,7 +3192,7 @@ reserve_soc_error:
 	oplus_comm_set_smooth_soc(chip, chip->soc);
 }
 
-static const int soc_jump_table[RESERVE_SOC_MAX + 1][RESERVE_SOC_MAX] = {
+static const int ui_soc_smooth_table[RESERVE_SOC_MAX + 1][RESERVE_SOC_MAX] = {
 	{ -1, -1, -1, -1, -1 }, /* reserve 0 */
 	{ 55, -1, -1, -1, -1 }, /* reserve 1 */
 	{ 36, 71, -1, -1, -1 }, /* reserve 2 */
@@ -3226,12 +3236,12 @@ static void oplus_comm_smooth_to_soc(struct oplus_chg_comm *chip, bool force)
 	}
 
 	for (i = reserve_soc - 1; i >= 0; i--) {
-		if (soc_jump_table[reserve_soc][i] < 0) {
-			chg_err("soc_jump_table invalid, please check it.\n");
+		if (chip->ui_soc_smooth_table[reserve_soc][i] < 0) {
+			chg_err("ui_soc_smooth_table invalid, please check it.\n");
 			goto reserve_soc_error;
 		}
 
-		if (soc >= soc_jump_table[reserve_soc][i]) {
+		if (soc >= chip->ui_soc_smooth_table[reserve_soc][i]) {
 			temp_soc = soc + i + 1;
 			break;
 		}
@@ -3246,9 +3256,9 @@ static void oplus_comm_smooth_to_soc(struct oplus_chg_comm *chip, bool force)
 			chip->rsd.smooth_soc_avg_cnt = SMOOTH_SOC_MIN_FIFO_LEN;
 
 		for (i = 0; i < reserve_soc; i++) {
-			if (soc >= (soc_jump_table[reserve_soc][i] - SOC_JUMP_RANGE_VAL) &&
-			    soc <= (soc_jump_table[reserve_soc][i] + SOC_JUMP_RANGE_VAL)) {
-				chg_debug("soc:%d index:%d soc_jump:%d\n", soc, i, soc_jump_table[reserve_soc][i]);
+			if (soc >= (chip->ui_soc_smooth_table[reserve_soc][i] - SOC_JUMP_RANGE_VAL) &&
+			    soc <= (chip->ui_soc_smooth_table[reserve_soc][i] + SOC_JUMP_RANGE_VAL)) {
+				chg_debug("soc:%d index:%d soc_jump:%d\n", soc, i, chip->ui_soc_smooth_table[reserve_soc][i]);
 				chip->rsd.is_soc_jump_range = true;
 				chip->rsd.smooth_soc_avg_cnt = SMOOTH_SOC_MAX_FIFO_LEN;
 				break;
@@ -3301,6 +3311,71 @@ reserve_soc_error:
 #define TIMES_OF_LOW_BATT_CONTROL_ENABLE	(DELAY_OF_LOW_BATT_CONTROL_ENABLE / DELAY_OF_ONCE_LOW_BATT_CONTROL)
 #define SEC_OF_ONE_HOUR		(3600)
 #define UI_SOC_LOW_LIMIT		(3)
+
+static void oplus_comm_parse_uv_dec_speed_tbl(struct oplus_chg_comm *comm_dev,
+						    struct device_node *node)
+{
+	const char *prop = "oplus_spec,uv_dec_speed_tbl";
+	int elems, rc, i;
+
+	elems = of_property_count_elems_of_size(node, prop, sizeof(u32));
+	if (elems <= 0 || (elems % UV_DEC_SPEED_ENTRY_U32_CNT)) {
+		chg_err("%s invalid elems=%d\n", prop, elems);
+		return;
+	}
+
+	comm_dev->uv_dec_speed_tbl_cnt = elems / UV_DEC_SPEED_ENTRY_U32_CNT;
+	comm_dev->uv_dec_speed_tbl = devm_kcalloc(comm_dev->dev, comm_dev->uv_dec_speed_tbl_cnt,
+						  sizeof(*comm_dev->uv_dec_speed_tbl), GFP_KERNEL);
+	if (!comm_dev->uv_dec_speed_tbl) {
+		chg_err("alloc uv_dec_speed_tbl fail, cnt=%d\n", comm_dev->uv_dec_speed_tbl_cnt);
+		comm_dev->uv_dec_speed_tbl_cnt = 0;
+		return;
+	}
+
+	rc = of_property_read_u32_array(node, prop, (u32 *)comm_dev->uv_dec_speed_tbl, elems);
+	if (rc < 0) {
+		chg_err("read %s fail, rc=%d\n", prop, rc);
+		goto out_free;
+	}
+
+	for (i = 0; i < comm_dev->uv_dec_speed_tbl_cnt; i++) {
+		if (comm_dev->uv_dec_speed_tbl[i].speed <= 0) {
+			chg_err("invalid speed, i=%d speed=%u\n",
+				i, comm_dev->uv_dec_speed_tbl[i].speed);
+			goto out_free;
+		}
+		if (i > 0 && comm_dev->uv_dec_speed_tbl[i].temp <= comm_dev->uv_dec_speed_tbl[i - 1].temp) {
+			chg_err("temp not increasing, i=%d temp=%d prev_temp=%d\n",
+				i, comm_dev->uv_dec_speed_tbl[i].temp,
+				comm_dev->uv_dec_speed_tbl[i - 1].temp);
+			goto out_free;
+		}
+	}
+
+	return;
+
+out_free:
+	devm_kfree(comm_dev->dev, comm_dev->uv_dec_speed_tbl);
+	comm_dev->uv_dec_speed_tbl = NULL;
+	comm_dev->uv_dec_speed_tbl_cnt = 0;
+}
+
+static unsigned int oplus_comm_get_uv_dec_speed(struct oplus_chg_comm *chip)
+{
+	int i;
+
+	if (!chip->uv_dec_speed_tbl || chip->uv_dec_speed_tbl_cnt <= 0)
+		return UI_SOC_DEC_SPEED_OF_UV_BATT;
+
+	for (i = 0; i < chip->uv_dec_speed_tbl_cnt - 1; i++) {
+		if (chip->shell_temp < chip->uv_dec_speed_tbl[i].temp)
+			return chip->uv_dec_speed_tbl[i].speed;
+	}
+
+	return chip->uv_dec_speed_tbl[chip->uv_dec_speed_tbl_cnt - 1].speed;
+}
+
 static unsigned long oplus_comm_ui_soc_low_battery_control(struct oplus_chg_comm *chip, unsigned long soc_down_jiffies,
 	int vbat_min, bool *p_force_down_1)
 {
@@ -3396,8 +3471,7 @@ static unsigned long oplus_comm_ui_soc_low_battery_control(struct oplus_chg_comm
 					    t_soc_x_to_1, *p_force_down_1, back_rm, load_current);
 				}
 
-				if (t_soc_x_to_1 < UI_SOC_DEC_SPEED_OF_UV_BATT)
-					t_soc_x_to_1 = UI_SOC_DEC_SPEED_OF_UV_BATT;
+				t_soc_x_to_1 = max(t_soc_x_to_1, oplus_comm_get_uv_dec_speed(chip));
 				soc_down_jiffies = chip->soc_down_update_jiffies + (unsigned long)(t_soc_x_to_1 * HZ);
 			}
 		} else {
@@ -3525,6 +3599,26 @@ static void oplus_comm_smooth_strategy_set_online(struct oplus_chg_comm *chip)
 
 	oplus_chg_strategy_set_process_data(chip->smooth_strategy, "chg_online",
 		(chip->wired_online || chip->wls_online));
+}
+
+int oplus_comm_smooth_strategy_rus_set_secondary_smooth_map(struct oplus_mms *topic, bool enable)
+{
+	struct oplus_chg_comm *chip = NULL;
+
+	if (topic == NULL) {
+		chg_err("topic is NULL\n");
+		return -EINVAL;
+	}
+
+	chip = oplus_mms_get_drvdata(topic);
+	if (!chip)
+		return -EINVAL;
+	if (!chip->smooth_strategy)
+		return -EINVAL;
+
+	oplus_chg_strategy_set_process_data(chip->smooth_strategy, "rus_set", enable);
+
+	return 0;
 }
 
 static void oplus_comm_smooth_strategy_update(struct oplus_chg_comm *chip)
@@ -3726,7 +3820,7 @@ static void oplus_comm_ui_soc_update(struct oplus_chg_comm *chip)
 				    charging, vbat_min, chip->vbat_mv,
 				    force_dec_interval, config->chg_shutdown_max_mv, chip->ui_soc);
 				soc_down_jiffies = chip->soc_down_update_jiffies +
-						   (unsigned long)(UI_SOC_DEC_SPEED_OF_UV_BATT * HZ);
+						   (unsigned long)(oplus_comm_get_uv_dec_speed(chip) * HZ);
 				force_down_2 = true;
 			} else {
 				force_down_2 = false;
@@ -3738,7 +3832,7 @@ static void oplus_comm_ui_soc_update(struct oplus_chg_comm *chip)
 		/* Force ui_soc to drop to 0 when the voltage is too low */
 		if (time_is_before_jiffies(vbat_uv_jiffies)) {
 			soc_down_jiffies = chip->soc_down_update_jiffies +
-					   (unsigned long)(UI_SOC_DEC_SPEED_OF_UV_BATT * HZ);
+					   (unsigned long)(oplus_comm_get_uv_dec_speed(chip) * HZ);
 			force_down_2 = true;
 		} else {
 			force_down_2 = false;
@@ -4151,6 +4245,7 @@ void oplus_comm_ui_soc_decimal_deinit(struct oplus_chg_comm *chip)
 	soc_decimal->init_decimal_ui_soc = 0;
 }
 
+#define UI_SOC_DECIMAL_SPEED_MIN	10L
 static void oplus_comm_show_ui_soc_decimal(struct work_struct *work)
 {
 	struct delayed_work *dwork = to_delayed_work(work);
@@ -4199,6 +4294,7 @@ static void oplus_comm_show_ui_soc_decimal(struct work_struct *work)
 		} else if (chip->ui_soc < chip->smooth_soc) {
 			speed = speed * 2;
 		}
+		speed = max(speed, UI_SOC_DECIMAL_SPEED_MIN);
 	} else {
 		speed = 0;
 		if (chip->batt_full)
@@ -8146,21 +8242,72 @@ static bool oplus_comm_parse_from_cmdline(struct oplus_chg_comm *chip)
 	return false;
 }
 
+static void oplus_comm_parse_ui_soc_smooth_table_dt(struct oplus_chg_comm *chip, struct device_node *node)
+{
+	int rc = 0;
+	int i = 0, j = 0, len = 0;
+	int (*dynamic_table)[RESERVE_SOC_MAX];
+	int expected_len = (RESERVE_SOC_MAX + 1) * RESERVE_SOC_MAX;
+	u32 tmp_table[(RESERVE_SOC_MAX + 1) * RESERVE_SOC_MAX];
+
+	if (!node) {
+		chg_err("Invalid parameters passed\n");
+		return;
+	}
+
+	len = of_property_count_u32_elems(node, "oplus,ui_soc_smooth_table");
+	if (len > 0) {
+		if (len != expected_len) {
+			chg_err("ui_soc_smooth_table length invalid: len=%d (expected %d), use default\n", len, expected_len);
+			return;
+		}
+
+		rc = of_property_read_u32_array(node, "oplus,ui_soc_smooth_table", tmp_table,
+				(RESERVE_SOC_MAX + 1) * RESERVE_SOC_MAX);
+		if (rc < 0) {
+			chg_err("get oplus,ui_soc_smooth_table, use default\n");
+			return;
+		}
+
+		dynamic_table = devm_kzalloc(chip->dev,
+					sizeof(int) * (RESERVE_SOC_MAX + 1) * RESERVE_SOC_MAX, GFP_KERNEL);
+		if (dynamic_table) {
+			for (i = 0; i < RESERVE_SOC_MAX + 1; i++) {
+				for (j = 0; j < RESERVE_SOC_MAX; j++) {
+					dynamic_table[i][j] = (int)tmp_table[i * RESERVE_SOC_MAX + j];
+				}
+			}
+			chip->ui_soc_smooth_table = dynamic_table;
+			chg_info("use dts ui_soc_smooth_table, elements=%d\n", len);
+		} else {
+			chg_err("alloc ui_soc_smooth_table failed, use default\n");
+		}
+	} else {
+		chg_info("no dts ui_soc_smooth_table, use default\n");
+		return;
+	}
+}
+
 static void oplus_comm_parse_smooth_soc_dt(struct oplus_chg_comm *chip)
 {
 	struct device_node *node = oplus_get_node_by_type(chip->dev->of_node);
 	struct oplus_comm_config *config = &chip->config;
 	int rc;
 
+	chip->ui_soc_smooth_table = ui_soc_smooth_table;
+
 	if (oplus_comm_reserve_soc_by_rus(chip)) {
 		config->smooth_switch = true;
 		config->reserve_soc = chip->rsd.rus_reserve_soc;
+		oplus_comm_parse_ui_soc_smooth_table_dt(chip, node);
 	} else {
 		config->smooth_switch = of_property_read_bool(node, "oplus,smooth_switch");
 		if (config->smooth_switch) {
 			rc = of_property_read_u32(node, "oplus,reserve_chg_soc", &config->reserve_soc);
 			if (rc)
 				config->reserve_soc = RESERVE_SOC_DEFAULT;
+
+			oplus_comm_parse_ui_soc_smooth_table_dt(chip, node);
 		}
 		chg_info("read from dts %d %d\n", config->smooth_switch, config->reserve_soc);
 	}
@@ -8763,6 +8910,8 @@ static int oplus_comm_parse_dt(struct oplus_chg_comm *comm_dev)
 
 	config->vooc_dis_show_ui_power =
 		of_property_read_bool(node, "oplus,vooc_dis_show_ui_power");
+
+	oplus_comm_parse_uv_dec_speed_tbl(comm_dev, node);
 
 	rc = read_signed_data_from_node(node, "oplus_spec,drop_soc_2_temp_ladder",
 					  (u32 *)&config->temp_ladder_of_drop_soc_2, LOW_VOLT_UISOC_LADDER_NUMBER);

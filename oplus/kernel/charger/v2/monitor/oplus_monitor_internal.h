@@ -19,6 +19,7 @@ struct dischg_avg {
 	int vbat;
 };
 #define DEEP_DISCHG_AVG_PROFILE_SIZE		36
+#define OPLUS_MONITOR_REVERSE_STR_MAX		300
 
 struct deep_dischg_profile {
 	int32_t vbat_10;
@@ -114,6 +115,7 @@ struct oplus_monitor {
 	struct oplus_mms *plc_topic;
 	struct mms_subscribe *plc_subs;
 	struct oplus_mms *pps_topic;
+	struct oplus_mms *dischg_boost_topic;
 
 	struct oplus_chg_track *track;
 
@@ -299,6 +301,7 @@ struct oplus_monitor {
 	bool retention_state;
 	bool pre_retention_state;
 	int total_disconnect_count;
+	bool curr_derating_trig;
 };
 
 struct oplus_chg_into_l{
