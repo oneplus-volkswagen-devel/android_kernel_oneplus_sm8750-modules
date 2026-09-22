@@ -1,6 +1,7 @@
 #ifndef __MAGCVR_CORE_H__
 #define __MAGCVR_CORE_H__
 
+#include <linux/atomic.h>
 #include <linux/ioctl.h>
 #include <linux/mutex.h>
 #include <linux/delay.h>
@@ -70,6 +71,8 @@ module_param(v_adjust, int, 0644);
 #define MAG_CVR_TAG         "[magnetic_cover]"
 #define MAG_CVR_DEBUG_TAG   "[magnetic_cover debug]"
 
+#define INPUT_BUF_SIZE       32
+
 // #define MAGCVR_LOG_DEBUG_ON 1
 bool debug_enable = 0;
 
@@ -114,6 +117,7 @@ bool debug_enable = 0;
 #define GET_DATA_RETRY  5
 #define GET_DATA_TIMN   50
 #define NOISE_STEP      100
+#define MAGCVR_STATS_INDEX_MAX 2
 
 enum M_IRQ_TYPE {
 	EDGE_DOWN = 2,
@@ -316,9 +320,14 @@ struct magnetic_cover_info {
 	int cal_offset_cnt;
 	bool init_chip_failed;
 	bool no_need_calibration;
+	atomic_long_t stats_attach_wireless_cnt;
+	atomic_long_t stats_attach_pen_cnt;
+	atomic_long_t stats_detach_wireless_cnt;
+	atomic_long_t stats_detach_pen_cnt;
 	// fault injection opt
 	unsigned short fault_injection_opt;
 	int fault_injection_state;
+	int magcvr_index;
 };
 
 struct magnetic_cover_info *alloc_for_magcvr(void);
