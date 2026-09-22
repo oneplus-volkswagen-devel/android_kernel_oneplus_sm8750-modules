@@ -198,8 +198,8 @@ static void dfs_puncture_init(struct wlan_dfs *dfs)
 	bool is_sap_dfs_punct_enabled;
 
 	/*
-	 * Enable NOL sub chan marking if SAP DFS puncture enabled, or all
-	 * bonded operation freq will be affected and disabled for NOL,
+	 * Enable sub chan DFS type if SAP DFS functure enabled, or all
+	 * bonded operation freq will be affected and disabled for nol,
 	 * puncture can't work, always need to switch freq.
 	 */
 

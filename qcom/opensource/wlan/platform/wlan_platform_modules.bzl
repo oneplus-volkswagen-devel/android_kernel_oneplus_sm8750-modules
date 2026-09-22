@@ -150,11 +150,17 @@ def _define_modules_for_target_variant(target, variant):
                 "cnss2/genl.c",
                 "cnss2/*.h",
                 "cnss_utils/*.h",
+                #ifdef OPLUS_FEATURE_WIFI_BDF
+                "cnss2/oplus_wifi.c",
+                #endif /* OPLUS_FEATURE_WIFI_BDF */
             ]),
             includes = ["cnss", "cnss_utils"],
             kconfig = "cnss2/Kconfig",
             defconfig = defconfig,
-            conditional_srcs = {
+            #ifdef OPLUS_FEATURE_WIFI_FTM
+            local_defines = ["OPLUS_FEATURE_WIFI_BDF", "OPLUS_FEATURE_WIFI_MAC", "OPLUS_FEATURE_WIFI_FTM", "OPLUS_FEATURE_WIFI_DCS_SWITCH", "OPLUS_BUG_STABILITY", "OPLUS_FEATURE_SOFTAP_DCS_SWITCH", "OPLUS_FEATURE_WIFI_VENDOR_FT", "OPLUS_FEATURE_WIFI_MINIDUMP", "OPLUS_FEATURE_WIFI_BEAM_SWITCH"],
+            #endif /* OPLUS_FEATURE_WIFI_FTM */
+            conditional_srcs =  {
                 "CONFIG_CNSS2_QMI": {
                     True: [
                         "cnss2/qmi.c",
@@ -191,11 +197,25 @@ def _define_modules_for_target_variant(target, variant):
                 "icnss2/genl.c",
                 "icnss2/*.h",
                 "cnss_utils/*.h",
+                "icnss2/oplus_wifi.c",
+                #endif /* OPLUS_FEATURE_WIFI_BDF */
             ]),
             includes = ["icnss2", "cnss_utils"],
             kconfig = "icnss2/Kconfig",
             copts = [],
             defconfig = defconfig,
+            #ifdef OPLUS_FEATURE_WIFI_DCS_SWITCH
+            #add oplus feature with bazel compile config
+            local_defines = [
+                            "OPLUS_FEATURE_WIFI_BDF",
+                            "OPLUS_FEATURE_WIFI_MAC",
+                            "OPLUS_FEATURE_WIFI_FTM",
+                            "OPLUS_BUG_STABILITY",
+                            "OPLUS_FEATURE_WIFI_DCS_SWITCH",
+                            "OPLUS_FEATURE_SOFTAP_DCS_SWITCH",
+                            "OPLUS_FEATURE_WIFI_VENDOR_FT",
+            ],
+            #endif
             conditional_srcs = {
                 "CONFIG_ICNSS2_QMI": {
                     True: [

@@ -1540,17 +1540,17 @@ bool wlan_cm_is_eht_allowed_for_current_security(struct wlan_objmgr_psoc *psoc,
 		return true;
 	}
 
-	if (!entry->ie_list.rsn) {
-		mlme_debug(QDF_MAC_ADDR_FMT ": RSN IE not present",
-			   QDF_MAC_ADDR_REF(entry->bssid.bytes));
-		return false;
-	}
-
 	/* Get the OEM EHT configuration. */
 	status = wlan_mlme_get_oem_eht_mlo_config(psoc, &oem_eht_cfg);
 	if (QDF_IS_STATUS_ERROR(status)) {
 		mlme_rl_nofl_err("OEM EHT cfg get failed");
 		return false;
+	}
+
+	if (!entry->ie_list.rsn) {
+		mlme_debug(QDF_MAC_ADDR_FMT ": RSN IE not present, is allowed: %d",
+			   QDF_MAC_ADDR_REF(entry->bssid.bytes), WLAN_CRYPTO_NONE_OEM_EHT_CFG_ALLOWED(oem_eht_cfg));
+		return WLAN_CRYPTO_NONE_OEM_EHT_CFG_ALLOWED(oem_eht_cfg);
 	}
 
 	/* Check if the AP is ML capable or not */

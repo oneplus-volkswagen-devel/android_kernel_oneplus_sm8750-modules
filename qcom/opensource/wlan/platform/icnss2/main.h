@@ -74,6 +74,10 @@ struct icnss_control_params {
 	unsigned int bdf_type;
 };
 
+#ifdef OPLUS_FEATURE_WIFI_DCS_SWITCH
+extern bool idle_shutdown;
+#endif /* OPLUS_FEATURE_WIFI_DCS_SWITCH */
+
 #if IS_ENABLED(CONFIG_INTERCONNECT)
 /**
  * struct icnss_bus_bw_cfg - Interconnect vote data
@@ -768,6 +772,16 @@ struct icnss_priv {
 	bool psf_supported;
 	struct notifier_block psf_nb;
 	struct power_supply *batt_psy;
+	#ifdef OPLUS_FEATURE_WIFI_DCS_SWITCH
+	//Add for wifi switch monitor
+	unsigned long loadBdfState;
+	unsigned long loadRegdbState;
+	unsigned long pcieBusState;
+	unsigned long pcieEnumState;
+	unsigned long pcieLinkDown;
+	unsigned long pcieL1Fail;
+	#endif /* OPLUS_FEATURE_WIFI_DCS_SWITCH */
+	const char *bdf_name, *region_name;
 	int last_updated_voltage;
 	struct work_struct soc_update_work;
 	struct workqueue_struct *soc_update_wq;
@@ -813,6 +827,31 @@ struct icnss_priv {
 	u8 *wcn_ktb_info_buf;
 	bool legacy_ipc_transport;
 };
+
+#ifdef OPLUS_FEATURE_WIFI_DCS_SWITCH
+//Add for wifi switch monitor
+enum cnss_load_state {
+	CNSS_LOAD_BDF_FAIL = 1,
+	CNSS_LOAD_BDF_SUCCESS,
+	CNSS_LOAD_REGDB_FAIL,
+	CNSS_LOAD_REGDB_SUCCESS,
+	CNSS_PROBE_FAIL,
+	CNSS_PROBE_SUCCESS,
+	CNSS_PCIEBUS_FAIL,
+	CNSS_PCIE_ENUM_FAIL,
+	CNSS_PCIE_LINK_DOWN,
+	CNSS_PCIE_L1_FAIL,
+};
+#define CNSS_ERROR_SIZE 64
+#define MAX_CNSS_ERROE_LIST_LENGTH 10
+#define CNSS_STRUCT_ITEM_LENGTH 80
+#define MAX_BUFFER_SIZE (CNSS_STRUCT_ITEM_LENGTH)*(MAX_CNSS_ERROE_LIST_LENGTH)
+struct cel_list {
+    u64 time_s;
+    char message[CNSS_ERROR_SIZE];
+    struct cel_list *next;
+};
+#endif /* OPLUS_FEATURE_WIFI_DCS_SWITCH */
 
 struct icnss_reg_info {
 	uint32_t mem_type;

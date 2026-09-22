@@ -37,8 +37,9 @@
 #ifdef OPLUS_FEATURE_WIFI_BDF
 //Modify for: multi projects using different bdf
 #include <soc/oplus/system/oplus_project.h>
+//Add for: select BDF by device-tree , bug id 7902090
+#include "oplus_wifi.h"
 #endif /* OPLUS_FEATURE_WIFI_BDF */
-
 
 #ifdef OPLUS_FEATURE_WIFI_BDF
 //Modify for: multi projects using different bdf
@@ -59,6 +60,13 @@ enum REGION_VERSION {
 
 //Modify for:Loading India BDF match from nv region
 #define REGION_IN_NV	0x1b
+
+//Add for loading Mexico BDF match from MX region_nv
+//In Zenith project flags LATAM is 10011010=0x9A / MX-TELCEL is 01111010=0x7A
+#define REGION_MX_NV		0x9A
+#define REGION_MX_TEL_NV	0x7A
+#define PROJECT_ID_ZENITH	25689
+
 #endif /* OPLUS_FEATURE_WIFI_BDF */
 
 #define WLFW_SERVICE_WCN_INS_ID_V01	3
@@ -68,6 +76,8 @@ enum REGION_VERSION {
 
 #define BDF_FILE_NAME_PREFIX		"bdwlan"
 #define ELF_BDF_FILE_NAME		"bdwlan.elf"
+#define ELF_BDF_FILE_NAME_CN		"bdwlan_cn.elf"
+#define ELF_BDF_FILE_NAME_MX		"bdwlan_mx.elf"
 #define ELF_BDF_FILE_NAME_PREFIX	"bdwlan.e"
 #define BIN_BDF_FILE_NAME		"bdwlan.bin"
 #define BIN_BDF_FILE_NAME_PREFIX	"bdwlan."
@@ -999,7 +1009,6 @@ int icnss_wlfw_wlan_mac_req_send_sync(struct icnss_priv *priv,
 	int i;
 	char revert_mac[QMI_WLFW_MAC_ADDR_SIZE_V01];
 #endif /* OPLUS_FEATURE_WIFI_MAC */
-
 	if (!priv || !mac || mac_len != QMI_WLFW_MAC_ADDR_SIZE_V01)
 		return -EINVAL;
 
@@ -1145,6 +1154,11 @@ out:
 	return ret;
 }
 
+void icnss_dms_deinit(struct icnss_priv *priv)
+{
+	qmi_handle_release(&priv->qmi_dms);
+}
+
 #ifdef OPLUS_FEATURE_WIFI_BDF
 //Modify for: multi projects using different bdf
 static bool is_prj_support_region_id(void) {
@@ -1154,8 +1168,20 @@ static bool is_prj_support_region_id(void) {
 		return true;
 	} else if (project_id == 24882 || project_id == 24881) {
 		return true;
+	} else if (project_id == 25265) {
+		return true;
 	}
 	return false;
+}
+
+static bool is_prj_support_region_rf_id(void) {
+    int project_id = get_project();
+    icnss_pr_dbg("the project support region rf  id is: %d\n", project_id);
+
+    if (project_id == 24625) {
+        return true;
+    }
+    return false;
 }
 
 static bool is_prj_support_region_nv_id(void) {
@@ -1163,6 +1189,16 @@ static bool is_prj_support_region_nv_id(void) {
     icnss_pr_dbg("the project support region nv id is: %d\n", project_id);
 
     if (project_id == 23718 || project_id == 24687) {
+        return true;
+    }
+    return false;
+}
+
+static bool is_prj_support_mx_region_nv_id(void) {
+    int project_id = get_project();
+    icnss_pr_info("the project support mexico region nv is: %d\n", project_id);
+
+    if (project_id == PROJECT_ID_ZENITH) {
         return true;
     }
     return false;
@@ -1215,12 +1251,27 @@ static void cnss_get_oplus_bdf_file_name(char* file_name, u32 filename_len) {
         } else {
             snprintf(file_name, filename_len, ELF_BDF_FILE_NAME);
         }
-    } else if (is_prj_support_region_nv_id()) {
+    } else if (is_prj_support_region_rf_id()) {
+        if (rf_id == 20 || rf_id == 21 || rf_id == 22) {
+            snprintf(file_name, filename_len, ELF_BDF_FILE_NAME_CN);
+        } else {
+            snprintf(file_name, filename_len, ELF_BDF_FILE_NAME);
+        }
+    }else if (is_prj_support_region_nv_id()) {
         //get nvid from bsp pps modules@dinggaoshan
         region_nv_id = get_regionid_from_cmdline();
         if (region_nv_id == REGION_IN_NV) {
             snprintf(file_name, filename_len, BDF_FILE_IN);
         } else {
+            snprintf(file_name, filename_len, ELF_BDF_FILE_NAME);
+        }
+    } else if (is_prj_support_mx_region_nv_id()) {
+        region_nv_id = get_regionid_from_cmdline();
+        if (region_nv_id == REGION_MX_NV || region_nv_id == REGION_MX_TEL_NV) {
+            icnss_pr_info("Detected Mexico region, using Mexico BDF\n");
+            snprintf(file_name, filename_len, ELF_BDF_FILE_NAME_MX);
+        } else {
+            icnss_pr_info("Using default BDF for region_nv_id: %d\n", region_nv_id);
             snprintf(file_name, filename_len, ELF_BDF_FILE_NAME);
         }
     } else {
@@ -1229,15 +1280,14 @@ static void cnss_get_oplus_bdf_file_name(char* file_name, u32 filename_len) {
 }
 #endif /* OPLUS_FEATURE_WIFI_BDF */
 
-void icnss_dms_deinit(struct icnss_priv *priv)
-{
-	qmi_handle_release(&priv->qmi_dms);
-}
-
 static int icnss_get_bdf_file_name(struct icnss_priv *priv,
 				   u32 bdf_type, char *filename,
 				   u32 filename_len)
 {
+	#ifdef OPLUS_FEATURE_WIFI_BDF
+	//Add for: select BDF by device-tree , bug id 7902090
+	const char *bdf_filename;
+	#endif  /* OPLUS_FEATURE_WIFI_BDF */
 	char filename_tmp[ICNSS_MAX_FILE_NAME];
 	char foundry_specific_filename[ICNSS_MAX_FILE_NAME];
 	int ret = 0;
@@ -1249,7 +1299,16 @@ static int icnss_get_bdf_file_name(struct icnss_priv *priv,
 			//Modify for: multi projects using different bdf
 			snprintf(filename_tmp, filename_len, ELF_BDF_FILE_NAME);
 			#else
-			cnss_get_oplus_bdf_file_name(filename_tmp, filename_len);
+			{
+				cnss_get_oplus_bdf_file_name(filename_tmp, filename_len);
+				//Add for: select BDF by device-tree , bug id 7902090
+				bdf_filename = get_oplus_wifi_bdf();
+				if (bdf_filename && (strlen(bdf_filename) < MAX_FIRMWARE_NAME_LEN)) {
+					strcpy(filename_tmp, bdf_filename);
+					priv->bdf_name = bdf_filename;
+					priv->region_name = get_oplus_wifi_region();
+				}
+			}
 			#endif /* OPLUS_FEATURE_WIFI_BDF */
 		else if (priv->board_id < 0xFF)
 			snprintf(filename_tmp, filename_len,
@@ -1351,7 +1410,16 @@ int icnss_wlfw_bdf_dnld_send_sync(struct icnss_priv *priv, u32 bdf_type)
 	temp = fw_entry->data;
 	remaining = fw_entry->size;
 
-	icnss_pr_dbg("Downloading %s: %s, size: %u\n",
+#ifdef OPLUS_FEATURE_WIFI_DCS_SWITCH
+//Add for: check fw status for switch issue
+	if (bdf_type == ICNSS_BDF_REGDB) {
+		set_bit(CNSS_LOAD_REGDB_SUCCESS, &priv->loadRegdbState);
+	} else if (bdf_type == ICNSS_BDF_ELF){
+		set_bit(CNSS_LOAD_BDF_SUCCESS, &priv->loadBdfState);
+	}
+#endif /* OPLUS_FEATURE_WIFI_DCS_SWITCH */
+
+	icnss_pr_info("Downloading %s: %s, size: %u\n",
 		     icnss_bdf_type_to_str(bdf_type), filename, remaining);
 
 	while (remaining) {
@@ -1424,6 +1492,16 @@ int icnss_wlfw_bdf_dnld_send_sync(struct icnss_priv *priv, u32 bdf_type)
 err_send:
 	release_firmware(fw_entry);
 err_req_fw:
+
+#ifdef OPLUS_FEATURE_WIFI_DCS_SWITCH
+//Add for: check fw status for switch issue
+	if (bdf_type == ICNSS_BDF_REGDB) {
+		set_bit(CNSS_LOAD_REGDB_FAIL, &priv->loadRegdbState);
+	} else if (bdf_type == ICNSS_BDF_ELF){
+		set_bit(CNSS_LOAD_BDF_FAIL, &priv->loadBdfState);
+	}
+#endif /* OPLUS_FEATURE_WIFI_DCS_SWITCH */
+
 	if (bdf_type != ICNSS_BDF_REGDB)
 		ICNSS_QMI_ASSERT();
 	kfree(req);
