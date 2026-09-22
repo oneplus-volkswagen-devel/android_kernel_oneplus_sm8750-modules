@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/sched.h>
@@ -34,6 +34,7 @@
 #define LOG_SYNCPOINT_FENCE_EXPIRE_EVENT 6
 #define LOG_TIMELINE_FENCE_ALLOC_EVENT 7
 #define LOG_TIMELINE_FENCE_RELEASE_EVENT 8
+#define LOG_CX_WAIT_TIMEOUT_EVENT 9
 
 static spinlock_t lock;
 static void *kgsl_eventlog;
@@ -239,6 +240,19 @@ void log_kgsl_timeline_fence_release_event(u32 id, u64 seqno)
 
 	entry->id = id;
 	entry->seqno = seqno;
+}
+
+void log_kgsl_cx_wait_timeout_event(u32 timeout_vote)
+{
+	struct {
+		u32 timeout_vote;
+	} __packed * entry;
+
+	entry = kgsl_eventlog_alloc(LOG_CX_WAIT_TIMEOUT_EVENT, sizeof(*entry));
+	if (!entry)
+		return;
+
+	entry->timeout_vote = timeout_vote;
 }
 
 size_t kgsl_snapshot_eventlog_buffer(struct kgsl_device *device,

@@ -2932,25 +2932,6 @@ static const struct kgsl_regmap_list gen8_ao_hwcg_regs[] = {
 	{ GEN8_GMUAO_CGC_HYST_CNTL, 0x00005555 },
 };
 
-static const struct hfi_therm_profile_ctrl therm_profile_8_0_0 = {
-	.feature_en = 1,
-	.feature_rev = 1,
-	.tsens_en = 0xFF,
-	.tj_limit = 900,
-	.tskin_addr = 0,
-	.tskin_limit = 0,
-	.tsens_cfg_cnt = 1,
-	.tsens_cfg.limit_u = 1130,
-	.tsens_cfg.limit_l = 10,
-	.tsens_cfg.margin_u = 30,
-	.tsens_cfg.margin_l = 20,
-	.throttle_cfg.throttle_hyst = 250,
-	.throttle_cfg.num_throttle_cnt = 3,
-	.throttle_cfg.throttle_lvls[0] = 50,
-	.throttle_cfg.throttle_lvls[1] = 37,
-	.throttle_cfg.throttle_lvls[2] = 20,
-};
-
 static const struct adreno_gen8_core adreno_gpu_core_gen8_0_0 = {
 	.base = {
 		DEFINE_ADRENO_REV(ADRENO_REV_GEN8_0_0,
@@ -2990,8 +2971,9 @@ static const struct adreno_gen8_core adreno_gpu_core_gen8_0_0 = {
 	.noc_timeout_us = 3410, /* 3.41 msec */
 	.ctxt_record_size = (13536 * SZ_1K),
 	.preempt_level = 1,
-	.cl_no_ft_timeout_ms = 6500,
-	.therm_profile = &therm_profile_8_0_0,
+	// ToDo: bug:8274887 SM8750 remove for higher antutu points,8735 is on confirmed state
+	// .cl_no_ft_timeout_ms = 6500,
+	// .therm_profile = &therm_profile_8_0_0,
 };
 
 static const struct adreno_gen8_core adreno_gpu_core_gen8_0_1 = {
@@ -3033,8 +3015,9 @@ static const struct adreno_gen8_core adreno_gpu_core_gen8_0_1 = {
 	.noc_timeout_us = 3410, /* 3.41 msec */
 	.ctxt_record_size = (13536 * SZ_1K),
 	.preempt_level = 1,
-	.cl_no_ft_timeout_ms = 6500,
-	.therm_profile = &therm_profile_8_0_0,
+	// ToDo: bug:8274887 SM8750 remove for higher antutu points,8735 is on confirmed state
+	// .cl_no_ft_timeout_ms = 6500,
+	// .therm_profile = &therm_profile_8_0_0,
 };
 
 /* GEN8_4_0 noncontext register list */
@@ -3144,7 +3127,8 @@ static const struct adreno_gen8_core adreno_gpu_core_gen8_4_0 = {
 	.bcl_data = 1,
 	.ctxt_record_size = (13536 * SZ_1K),
 	.noc_timeout_us = 3410, /* 3.41 msec */
-	.cl_no_ft_timeout_ms = 6500,
+	// ToDo: bug:8274887 SM8750 remove for higher antutu points,8735 is on confirmed state
+	// .cl_no_ft_timeout_ms = 6500,
 };
 
 extern const struct gen8_snapshot_block_list gen8_3_0_snapshot_block_list;

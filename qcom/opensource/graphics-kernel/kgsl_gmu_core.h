@@ -57,7 +57,6 @@ enum gmu_core_flags {
 	GMU_ENABLED,
 	GMU_RSCC_SLEEP_SEQ_DONE,
 	GMU_DISABLE_SLUMBER,
-	GMU_THERMAL_MITIGATION,
 };
 
 /*
@@ -183,10 +182,6 @@ enum gmu_vrb_idx {
 	VRB_TRACE_BUFFER_ADDR_IDX = 2,
 	/* Contains the number of hw fence shadow table entries */
 	VRB_HW_FENCE_SHADOW_NUM_ENTRIES = 3,
-	/* Contains OpenCL no fault tolerance timeout in ms */
-	VRB_CL_NO_FT_TIMEOUT = 4,
-	/* Contains the total number of GPU preemptions */
-	VRB_PREEMPT_COUNT_TOTAL = 5,
 };
 
 /* For GMU Trace */
@@ -408,6 +403,8 @@ enum gmu_fault_panic_policy {
 	GMU_FAULT_WAIT_FOR_LOWEST_IDLE,
 	GMU_FAULT_WAIT_FOR_IDLE,
 	GMU_FAULT_HW_FENCE,
+	GMU_FAULT_WAIT_FOR_CX,
+	GMU_FAULT_CX_WAIT_TIMEOUT,
 	GMU_FAULT_MAX,
 };
 

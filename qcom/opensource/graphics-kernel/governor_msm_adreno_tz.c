@@ -229,7 +229,8 @@ static int __secure_tz_update_entry3(int level, s64 total_time, s64 busy_time,
 }
 
 static int tz_init_ca(struct device *dev,
-	struct devfreq_msm_adreno_tz_data *priv)
+	struct devfreq_msm_adreno_tz_data *priv,
+	bool boost_flag)
 {
 	unsigned int tz_ca_data[2];
 	phys_addr_t paddr;
@@ -238,8 +239,13 @@ static int tz_init_ca(struct device *dev,
 	struct qtee_shm shm;
 
 	/* Set data for TZ */
-	tz_ca_data[0] = priv->bin.ctxt_aware_target_pwrlevel;
-	tz_ca_data[1] = priv->bin.ctxt_aware_busy_penalty;
+	if (!boost_flag) {
+		tz_ca_data[0] = priv->bin.ctxt_aware_target_pwrlevel;
+		tz_ca_data[1] = priv->bin.ctxt_aware_busy_penalty;
+	} else {
+		tz_ca_data[0] = 0;
+		tz_ca_data[1] = 0;
+	}
 
 	if (!qtee_shmbridge_is_enabled()) {
 		tz_buf = kzalloc(PAGE_ALIGN(sizeof(tz_ca_data)), GFP_KERNEL);
@@ -313,10 +319,27 @@ static int tz_init(struct device *dev, struct devfreq_msm_adreno_tz_data *priv,
 	} else
 		ret = -EINVAL;
 
+	/* Special case to set dcvs boost through context aware init with empty data */
+	if (!ret) {
+		if (priv->is_64 && qcom_scm_dcvs_ca_available()) {
+			ret = tz_init_ca(dev, priv, true);
+			/*
+			 * If context aware dcvs boost hint fails,
+			 * just print an error message as it is not fatal.
+			 */
+			if (ret) {
+				pr_warn(TAG "tz: DCVS boost hint failed\n");
+				ret = 0;
+			}
+		} else {
+			pr_warn(TAG "tz: DCVS boost hint not supported\n");
+		}
+	}
+
 	 /* Initialize context aware feature, if enabled. */
 	if (!ret && priv->ctxt_aware_enable) {
 		if (priv->is_64 && qcom_scm_dcvs_ca_available()) {
-			ret = tz_init_ca(dev, priv);
+			ret = tz_init_ca(dev, priv, false);
 			/*
 			 * If context aware feature initialization fails,
 			 * just print an error message and return

@@ -362,7 +362,7 @@ err:
 	gen8_hwsched_soccp_vote(adreno_dev, false);
 
 	if (device->gmu_fault) {
-		gen8_gmu_suspend(adreno_dev);
+		gen8_gmu_suspend(adreno_dev, false);
 
 		return ret;
 	}
@@ -445,7 +445,7 @@ err:
 	gen8_hwsched_soccp_vote(adreno_dev, false);
 
 	if (device->gmu_fault) {
-		gen8_gmu_suspend(adreno_dev);
+		gen8_gmu_suspend(adreno_dev, false);
 
 		return ret;
 	}
@@ -536,7 +536,7 @@ static int gen8_hwsched_gmu_power_off(struct adreno_device *adreno_dev)
 error:
 	gen8_gmu_irq_disable(adreno_dev);
 	gen8_hwsched_hfi_stop(adreno_dev);
-	gen8_gmu_suspend(adreno_dev);
+	gen8_gmu_suspend(adreno_dev, false);
 
 	return ret;
 }
@@ -667,7 +667,8 @@ static int gen8_hwsched_gmu_memory_init(struct adreno_device *adreno_dev)
 {
 	struct gen8_gmu_device *gmu = to_gen8_gmu(adreno_dev);
 	int ret;
-	const struct adreno_gen8_core *gen8_core = to_gen8_core(adreno_dev);
+	// ToDo: bug:8274887 SM8750 remove for higher antutu points,8735 is on confirmed state
+	// const struct adreno_gen8_core *gen8_core = to_gen8_core(adreno_dev);
 
 	/* GMU Virtual register bank */
 	if (IS_ERR_OR_NULL(gmu->vrb)) {
@@ -702,9 +703,10 @@ static int gen8_hwsched_gmu_memory_init(struct adreno_device *adreno_dev)
 	}
 
 	/* Set the CL infinite timeout VRB override (if declared in gpulist) */
-	if (gen8_core->cl_no_ft_timeout_ms)
-		gmu_core_set_vrb_register(gmu->vrb, VRB_CL_NO_FT_TIMEOUT,
-				gen8_core->cl_no_ft_timeout_ms);
+	// ToDo: bug:8274887 SM8750 remove for higher antutu points,8735 is on confirmed state
+	// if (gen8_core->cl_no_ft_timeout_ms)
+	// 	gmu_core_set_vrb_register(gmu->vrb, VRB_CL_NO_FT_TIMEOUT,
+	// 			gen8_core->cl_no_ft_timeout_ms);
 
 	return 0;
 }
@@ -712,9 +714,6 @@ static int gen8_hwsched_gmu_memory_init(struct adreno_device *adreno_dev)
 static int gen8_hwsched_gmu_init(struct adreno_device *adreno_dev)
 {
 	int ret;
-
-	if (ADRENO_FEATURE(adreno_dev, ADRENO_GMU_THERMAL_MITIGATION))
-		set_bit(GMU_THERMAL_MITIGATION, &KGSL_DEVICE(adreno_dev)->gmu_core.flags);
 
 	ret = gen8_gmu_parse_fw(adreno_dev);
 	if (ret)
@@ -1592,7 +1591,7 @@ int gen8_hwsched_reset_replay(struct adreno_device *adreno_dev)
 
 	gen8_hwsched_hfi_stop(adreno_dev);
 
-	gen8_gmu_suspend(adreno_dev);
+	gen8_gmu_suspend(adreno_dev, true);
 
 	adreno_hwsched_unregister_contexts(adreno_dev);
 

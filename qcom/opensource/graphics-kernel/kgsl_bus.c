@@ -13,6 +13,30 @@
 #include "kgsl_device.h"
 #include "kgsl_trace.h"
 
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_GEAS_GPU)
+
+struct gpu_params {
+	int imin;
+	int imax;
+	int amin;
+	int amax;
+	int ascale;
+	int fmin;
+	int fmax;
+	int resv[2];
+};
+
+static struct gpu_params gpu_data;
+
+int geas_update_gpu_params(struct gpu_params *data)
+{
+	memcpy(&gpu_data, data, sizeof(struct gpu_params));
+
+	return 0;
+}
+EXPORT_SYMBOL(geas_update_gpu_params);
+
+#endif
 
 static u32 _ab_buslevel_update(struct kgsl_pwrctrl *pwr,
 		u32 ib)
@@ -61,12 +85,33 @@ int kgsl_bus_update(struct kgsl_device *device,
 		{
 		/* FIXME: this might be wrong? */
 		int cur = pwr->pwrlevels[pwr->active_pwrlevel].bus_freq;
-
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_GEAS_GPU)
+		int imin = gpu_data.imin;
+		int imax = gpu_data.imax;
+		int amin = gpu_data.amin;
+		int amax = gpu_data.amax;
+#endif
 		buslevel = min_t(int, pwr->pwrlevels[0].bus_max,
 				cur + pwr->bus_mod);
 		buslevel = max_t(int, buslevel, 1);
 		pwr->cur_dcvs_buslevel = buslevel;
 		ab = _ab_buslevel_update(pwr, pwr->ddr_table[buslevel]);
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_GEAS_GPU)
+		if (imin > 0 && imin < pwr->ddr_table_count) {
+			buslevel = max_t(int, imin, buslevel);
+		}
+		if (imax > 0 && imax < pwr->ddr_table_count) {
+			buslevel = min_t(int, imax, buslevel);
+		}
+		pwr->cur_dcvs_buslevel = buslevel;
+
+		if (amin > 0) {
+			ab = max_t(int, amin, ab);
+		}
+		if (amax > 0) {
+			ab = min_t(int, amax, ab);
+		}
+#endif
 		break;
 		}
 	case KGSL_BUS_VOTE_MINIMUM:
