@@ -1065,12 +1065,17 @@ static int cbo_dispatch(unsigned int context_id,
 	 */
 
 	errno = set_txn_state(cb_txn, XST_TIMEDOUT) ? cb_txn->errno : -ERESTARTSYS;
-	pr_debug("%s invocation returned with %d (context_id %u).\n",
-		si_object_name(object), errno, context_id);
-	if (!errno)
+	if (!errno) {
+		pr_debug("%s invocation returned with %d (context_id %u).\n",
+			si_object_name(object), errno, context_id);
+
 		dispatcher_marshal_out(cb_txn->args, args);
-	else
+	} else {
+		pr_err("%s invocation returned with %d (context_id %u).\n",
+			si_object_name(object), errno, context_id);
+
 		dequeue_and_put_txn(cb_txn);
+	}
 
 	return errno;
 }
@@ -1221,20 +1226,17 @@ static long process_accept_req(struct server_info *si, struct smcinvoke_accept *
 
 		/* Try to notify the invoke thread. */
 		if (set_txn_state(cb_txn, XST_PROCESSED)) {
-
 			/* If 'set_txn_state' fails, e.g. invoke thread TIMEDOUT
-			 * undo 'marshal_out_cb_req' only on SUCCESS.
-			 */
+			* undo 'marshal_out_cb_req' only on SUCCESS.
+			*/
 			if (!errno) {
 				struct si_arg *u = cb_txn->args;
 
-				/* See comments in 'marshal_out_cb_req'. */
+			/* See comments in 'marshal_out_cb_req'. */
 
 				for (i = 0; u[i].type; i++) {
-					if (u[i].type != SI_AT_OO)
-						continue;
-
-					/* u[i].type == SI_AT_OO. */
+					switch (u[i].type) {
+					case SI_AT_OO:
 
 					if (is_cb_object(u[i].o))
 						to_cb_object(u[i].o)->notify_on_release = 0;
@@ -1243,8 +1245,20 @@ static long process_accept_req(struct server_info *si, struct smcinvoke_accept *
 						put_si_object(u[i].o);
 
 					put_si_object(u[i].o);
+
+					break;
+					case SI_AT_IB:
+					case SI_AT_OB:
+					case SI_AT_IO:
+					default:
+
+						break;
+					}
 				}
 			}
+
+			put_txn(cb_txn);
+			return -EINVAL;
 
 		} else
 			complete(&cb_txn->completion);
@@ -1253,7 +1267,6 @@ static long process_accept_req(struct server_info *si, struct smcinvoke_accept *
 
 		if (errno && !accept->result)
 			goto wait_on_request;
-
 
 		/* SUCCESS submitting the response. */
 	}
@@ -1623,7 +1636,7 @@ static int qtee_release(struct inode *nodp, struct file *filp)
 
 	/* The matching 'get_si_object' is in 'get_u_handle_from_si_object'. */
 
-	pr_debug("%s released.\n", si_object_name(object));
+	pr_info("%s released.\n", si_object_name(object));
 
 	put_si_object(object);
 
