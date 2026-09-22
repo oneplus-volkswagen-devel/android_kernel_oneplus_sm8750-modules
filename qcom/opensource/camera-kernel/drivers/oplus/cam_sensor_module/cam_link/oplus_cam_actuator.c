@@ -231,4 +231,3 @@ int oplus_cam_actuator_SetNotifyRfiService(struct cam_actuator_ctrl_t *a_ctrl, s
 #ifdef OPLUS_FEATURE_CAMERA_COMMON
 EXPORT_SYMBOL(oplus_cam_actuator_read_current);
 #endif
-

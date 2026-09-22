@@ -63,7 +63,9 @@
 #include "cam_tfe_csid.h"
 #include "cam_csid_ppi100.h"
 #include "camera_main.h"
-
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+#include "cam_common_util.h"
+#endif
 #ifdef CONFIG_CAM_PRESIL
 extern int cam_presil_framework_dev_init_from_main(void);
 extern void cam_presil_framework_dev_exit_from_main(void);
@@ -293,6 +295,10 @@ static int camera_init(void)
 	int rc;
 	uint i, j, num_inits;
 
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	if (!common_mem_pools_init())
+		return -ENOMEM;
+#endif
 	rc = camera_verify_submodules();
 	if (rc)
 		goto end_init;
@@ -325,6 +331,10 @@ static int camera_init(void)
 	CAM_DBG(CAM_UTIL, "Camera initcalls done");
 
 end_init:
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	if (rc)
+		common_mem_pools_deinit();
+#endif
 	return rc;
 }
 
@@ -332,6 +342,9 @@ static void camera_exit(void)
 {
 	__camera_exit(ARRAY_SIZE(submodule_table), 0);
 	cam_debugfs_deinit();
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	common_mem_pools_deinit();
+#endif
 
 	CAM_INFO(CAM_UTIL, "Spectra camera driver exited!");
 }
