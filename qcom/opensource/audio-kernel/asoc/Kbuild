@@ -236,7 +236,8 @@ endif
 LINUX_INC +=	-Iinclude/linux
 
 INCS +=		$(COMMON_INC) \
-		$(UAPI_INC)
+		$(UAPI_INC) \
+		-I$(AUDIO_ROOT)/oplus/codecs/sipa
 
 EXTRA_CFLAGS += $(INCS)
 

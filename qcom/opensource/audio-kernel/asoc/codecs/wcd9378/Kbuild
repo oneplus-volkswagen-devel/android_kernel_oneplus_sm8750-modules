@@ -80,6 +80,10 @@ ifdef CONFIG_SND_SOC_WCD9378_SLAVE
 	WCD9378_SLAVE_OBJS += wcd9378-slave.o
 endif
 
+ifdef CONFIG_SND_SOC_SDCA_REGISTERS
+	SDCA_REGISTERS_OBJS += sdca-registers-api.o
+endif
+
 LINUX_INC +=	-Iinclude/linux
 
 INCS +=		$(COMMON_INC) \

@@ -571,13 +571,9 @@ static int audio_pkt_srvc_callback(struct gpr_device *adev,
 	skb = alloc_skb(pkt_size, GFP_ATOMIC);
 #ifndef OPLUS_ARCH_EXTENDS
 	if (!skb) {
-		dev_err(&adev->dev, "%s: alloc_skb failed pkt_size %d\n", __func__, pkt_size);
-		skb = audio_pkt_get_backup();
-		if (!skb) {
-			dev_err(&adev->dev, "%s: get backup skb buffers failed\n",
-					__func__);
-			return -ENOMEM;
-		}
+		dev_err(&adev->dev, "%s: alloc_skb failed pkt_size %d\n",
+				__func__, pkt_size);
+		return -ENOMEM;
 	}
 #else /* OPLUS_ARCH_EXTENDS */
 	if (!skb) {
@@ -592,8 +588,7 @@ static int audio_pkt_srvc_callback(struct gpr_device *adev,
 	}
 
 	if (!skb) {
-		dev_err(&adev->dev, "%s: alloc_skb failed pkt_size %d\n",
-				__func__, pkt_size);
+		dev_err(&adev->dev, "%s: alloc_skb failed pkt_size %d\n", __func__, pkt_size);
 		return -ENOMEM;
 	}
 #endif /* OPLUS_ARCH_EXTENDS */
