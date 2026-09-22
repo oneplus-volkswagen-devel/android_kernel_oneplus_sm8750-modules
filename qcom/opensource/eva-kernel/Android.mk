@@ -20,6 +20,7 @@ include $(CLEAR_VARS)
 # For incremental compilation
 LOCAL_SRC_FILES   := $(wildcard $(LOCAL_PATH)/**/*) $(wildcard $(LOCAL_PATH)/*)
 LOCAL_MODULE      := msm-eva.ko
+LOCAL_MULTILIB := first
 LOCAL_MODULE_KBUILD_NAME := msm/msm-eva.ko
 LOCAL_MODULE_PATH := $(KERNEL_MODULES_OUT)
 
