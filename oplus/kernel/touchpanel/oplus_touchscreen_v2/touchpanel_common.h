@@ -142,6 +142,7 @@
 
 #define SMOOTH_LEVEL_NUM            6
 #define SENSITIVE_LEVEL_NUM         6
+#define CLICK_SENSITIVE_LEVEL_NUM   6
 
 #define PINCTRL_STATE_SPI_ACTIVE    "oplus_spi_active"
 #define PINCTRL_STATE_INT_ACTIVE    "oplus_int_active"
@@ -517,6 +518,14 @@ struct tp_aiunit_game_info {
 	u16 top;
 	u16 right;
 	u16 bottom;
+};
+
+/******For Long Strip Abnormal Detect******/
+struct long_strip_abnormal_detect_info {
+	u8  channels_max_thd;
+	u8  er_max;
+	u8  er_min;
+	u16 center_width;
 };
 
 /******For HW resource area********/
@@ -1273,6 +1282,7 @@ struct touchpanel_data {
 	struct hrtimer		temp_timer;
 	struct work_struct get_temperature_work;
 	struct touch_scene_info scene_info;
+	struct long_strip_abnormal_detect_info long_strip_abnormal_detect;
 
 	/******For fb notify area********/
 	struct work_struct     speed_up_work;               /*using for speedup resume*/
@@ -1339,14 +1349,18 @@ struct touchpanel_data {
 	/******For smooth sensitive area********/
 	bool smooth_level_array_support;
 	bool sensitive_level_array_support;
+	bool click_sensitive_level_array_support;
 	u32 smooth_level_array[SMOOTH_LEVEL_NUM];
 	u32 smooth_level_charging_array[SMOOTH_LEVEL_NUM];
 	u32 sensitive_level_array[SENSITIVE_LEVEL_NUM];
 	u32 sensitive_level_charging_array[SENSITIVE_LEVEL_NUM];
+	u32 click_sensitive_level_array[CLICK_SENSITIVE_LEVEL_NUM];
 	u32 *smooth_level_used_array;
 	u32 *sensitive_level_used_array;
+	u32 *click_sensitive_level_used_array;
 	u32 smooth_level_chosen;
 	u32 sensitive_level_chosen;
+	u32 click_sensitive_level_chosen;
 	u32 smooth_level_default;
 	u32 sensitive_level_default;
 
