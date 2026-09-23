@@ -69,7 +69,14 @@ struct puc_strategy_data {
 	int32_t target_vbus;
 	int32_t target_vbat;
 	int32_t target_ibus;
-	int32_t exit;
+	union {
+		uint32_t flags;
+		struct {
+			uint32_t exit          : 1;
+			uint32_t support_cv    : 1;
+			uint32_t reserve_flags : 30;
+		};
+	};
 	int32_t target_time;
 } __attribute__((packed));
 
