@@ -126,6 +126,13 @@ void oplus_apuir_setcmd_work_handler(struct work_struct *work_item)
 	SDE_ATRACE_END("oplus_apuir_set_cmd_replace");
 
 	mutex_lock(&panel->panel_lock);
+	/* uir cmd are available in power on */
+	if (display->panel->power_mode != SDE_MODE_DPMS_ON) {
+		APUIR_ERR("Should not send uir cmd when power mode is %u\n", display->panel->power_mode);
+		mutex_unlock(&panel->panel_lock);
+		SDE_ATRACE_END("oplus_apuir_setcmd_work_handler");
+		return;
+	}
 	SDE_ATRACE_BEGIN("cmdset");
 	rc = dsi_panel_tx_cmd_set(display->panel, mAPuirType, false);
 	SDE_ATRACE_END("cmdset");
