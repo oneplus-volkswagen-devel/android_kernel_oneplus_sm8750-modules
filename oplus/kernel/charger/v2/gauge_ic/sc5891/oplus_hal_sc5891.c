@@ -47,6 +47,12 @@
 #define SC5891_PULL_DOWN_I2C_DURATION_MS	2000
 #define SC5891_SHUTDOWN_WAIT_TIME_MS		5
 
+#define ECO_BATT_SN_OFFSET			6
+#define BATT_SN_LEN				12
+#define FULL_BATT_SN_LEN			25
+#define BATT_SN_MAX				5
+#define MAX_SN_SIZE				BATT_SN_MAX * BATT_SN_LEN
+
 struct sc5891_device {
 	struct device *dev;
 	struct oplus_chg_ic_dev *ic_dev;
@@ -69,11 +75,19 @@ struct sc5891_device {
 	uint8_t prikey[SC5891_INFO_LEN_PRIVATE_KEY];
 	uint8_t pubkey[SC5891_INFO_LEN_PUBLIC_KEY];
 	uint8_t cert[SC5891_INFO_LEN_CERT];
+	struct battery_manufacture_info battinfo;
+	struct delayed_work get_manu_battinfo_work;
+	bool support_eco_design;
 	bool cert_valid;
 	bool hardware_init_ok;
 	bool prikey_ok;
 	int prikey_index;
 	int sc5891_fault_mitigation;
+	int batt_info_num;
+	uint8_t dt_batt_info[BATT_SN_MAX][BATT_SN_LEN + 1];
+	uint8_t batt_info[BATT_SN_LEN + 1];
+	uint8_t full_batt_sn[FULL_BATT_SN_LEN + 1];
+	bool sn_match;
 
 	/*debugfs*/
 	struct dentry *debugfs_sc5891;
@@ -85,6 +99,11 @@ struct sc5891_device {
 
 enum {
 	SC5891_DATA_ID_BATT_SN = 0,
+	SC5891_DATA_ID_MANU_DATE,                       // Add manufacture date data ID
+	SC5891_DATA_ID_FIRST_USAGE_DATE,                // Add first usage date data ID
+	SC5891_DATA_ID_UI_CYCLE_COUNT,                  // Add UI cycle count data ID
+	SC5891_DATA_ID_UI_SOH,                          // Add UI SOH data ID
+	SC5891_DATA_ID_USED_FLAG,                       // Add used flag data ID
 	SC5891_DATA_ID_TERM_VOLT,
 	SC5891_DATA_ID_LAST_CC,
 	SC5891_DATA_ID_DEEP_DISCHG_COUNT,
@@ -123,6 +142,12 @@ const static struct sc5891_data_cfg sc5891_data_cfg_table[] = {
 	[SC5891_DATA_ID_LAST_CC]		= {5, 1, 6, 2, true},
 	[SC5891_DATA_ID_DEEP_DISCHG_COUNT]	= {5, 1, 0, 2, true},
 	[SC5891_DATA_ID_SILI_VCT]		= {5, 1, 9, 2, true},
+	/* Add ECO design related data configuration */
+	[SC5891_DATA_ID_MANU_DATE]        = {3, 1, 10, 2, false},   // Manufacture date, 2 bytes
+	[SC5891_DATA_ID_FIRST_USAGE_DATE] = {3, 1, 0, 2, true},     // First usage date, 2 bytes
+	[SC5891_DATA_ID_UI_CYCLE_COUNT]   = {3, 1, 5, 2, true},     // UI cycle count, 2 bytes
+	[SC5891_DATA_ID_UI_SOH]           = {3, 1, 3, 1, true},     // UI SOH, 1 byte
+	[SC5891_DATA_ID_USED_FLAG]        = {3, 1, 8, 1, true},     // Used flag, 1 byte
 };
 static int sc5891_ic_get_romid(struct sc5891_device *chip, uint64_t *id);
 #define SC5891_PINCTRL_AVOID_RETRY_MAX	3
@@ -1641,6 +1666,354 @@ static int sc5891_ecw(struct oplus_chg_ic_dev *ic_dev, bool *valid)
 	return rc;
 }
 
+static int sc5891_get_batt_info_from_ic(struct sc5891_device *chip);
+static int sc5891_get_manu_date_from_sn(struct sc5891_device *chip, u16 *raw_out);
+
+static int oplus_sc5891_get_manu_date(struct oplus_chg_ic_dev *ic_dev, char *buf, int len)
+{
+	struct sc5891_device *chip;
+	int rc;
+	u16 manu_date;
+	int date_len = 0;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+	chip = oplus_chg_ic_get_drvdata(ic_dev);
+	if (!chip || !buf || len < OPLUS_BATTINFO_DATE_SIZE)
+		return -EINVAL;
+
+	if (!chip->support_eco_design)
+		return -ENOTSUPP;
+
+	rc = sc5891_get_manu_date_from_sn(chip, &manu_date);
+	if (rc < 0) {
+		chg_err("manu_date from batt_sn failed, rc=%d\n", rc);
+		return rc;
+	}
+
+	date_len = snprintf(buf, len, "%d-%02d-%02d",
+					   (((manu_date >> 9) & 0x7F) + 1980),
+					   (manu_date >> 5) & 0xF,
+					   manu_date & 0x1F);
+	return date_len;
+}
+
+static int oplus_sc5891_get_first_usage_date(struct oplus_chg_ic_dev *ic_dev, char *buf, int len)
+{
+	struct sc5891_device *chip;
+	u8 data[2];
+	int rc;
+	u16 first_usage_date;
+	int date_len = 0;
+	int read_len = 0;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+	chip = oplus_chg_ic_get_drvdata(ic_dev);
+	if (!chip || !buf || len < OPLUS_BATTINFO_DATE_SIZE)
+		return -EINVAL;
+
+	if (!chip->support_eco_design)
+		return -ENOTSUPP;
+
+	/* Read first usage date using SC5891 format */
+	rc = sc5891_read_data(chip, SC5891_DATA_ID_FIRST_USAGE_DATE, data, &read_len);
+	if (rc < 0) {
+		chg_err("read first_usage_date failed, rc=%d\n", rc);
+		return rc;
+	}
+
+	/* Convert to 16-bit data */
+	first_usage_date = (data[1] << 8) | data[0];
+
+	date_len = snprintf(buf, len, "%d-%02d-%02d",
+					   (((first_usage_date >> 9) & 0x7F) + 1980),
+					   (first_usage_date >> 5) & 0xF,
+					   first_usage_date & 0x1F);
+	return date_len;
+}
+
+static int oplus_sc5891_set_first_usage_date(struct oplus_chg_ic_dev *ic_dev, const char *buf)
+{
+	struct sc5891_device *chip;
+	int year = 0;
+	int month = 0;
+	int day = 0;
+	int rc = 0;
+	u16 date = 0;
+	u8 data[2];
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+	chip = oplus_chg_ic_get_drvdata(ic_dev);
+	if (!chip || !buf)
+		return -EINVAL;
+
+	if (!chip->support_eco_design)
+		return -ENOTSUPP;
+
+	rc = sscanf(buf, "%d-%d-%d", &year, &month, &day);
+	if (rc != 3) {
+		chg_err("invalid first usage date format, rc=%d\n", rc);
+		return -EINVAL;
+	}
+	date = (((year - 1980) & 0x7F) << 9) | ((month & 0xF) << 5) | (day & 0x1F);
+
+	/* Convert to byte array */
+	data[0] = date & 0xFF;
+	data[1] = (date >> 8) & 0xFF;
+
+	chg_info("%d-%d-%d, date=0x%04x", year, month, day, date);
+
+	/* Write first usage date using SC5891 format */
+	rc = sc5891_write_data(chip, SC5891_DATA_ID_FIRST_USAGE_DATE, data);
+	if (rc < 0) {
+		chg_err("set first usage date fail rc = %d\n", rc);
+		return rc;
+	}
+
+	chip->battinfo.first_usage_date = date;
+	chg_info("set first usage date succ\n");
+
+	return 0;
+}
+
+static int oplus_sc5891_get_ui_cycle_count(struct oplus_chg_ic_dev *ic_dev, u16 *ui_cycle_count)
+{
+	struct sc5891_device *chip;
+	u8 data[2];
+	int rc;
+	int read_len = 0;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+	chip = oplus_chg_ic_get_drvdata(ic_dev);
+	if (!chip || !ui_cycle_count)
+		return -EINVAL;
+
+	if (!chip->support_eco_design)
+		return -ENOTSUPP;
+
+	/* Read UI cycle count using SC5891 format */
+	rc = sc5891_read_data(chip, SC5891_DATA_ID_UI_CYCLE_COUNT, data, &read_len);
+	if (rc < 0) {
+		chg_err("read ui_cycle_count failed, rc=%d\n", rc);
+		return rc;
+	}
+
+	*ui_cycle_count = (data[1] << 8) | data[0];
+	return 0;
+}
+
+static int oplus_sc5891_set_ui_cycle_count(struct oplus_chg_ic_dev *ic_dev, u16 ui_cycle_count)
+{
+	struct sc5891_device *chip;
+	int rc = 0;
+	u8 data[2];
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+	chip = oplus_chg_ic_get_drvdata(ic_dev);
+	if (!chip)
+		return -EINVAL;
+
+	if (!chip->support_eco_design)
+		return -ENOTSUPP;
+
+	/* Convert to byte array */
+	data[0] = ui_cycle_count & 0xFF;
+	data[1] = (ui_cycle_count >> 8) & 0xFF;
+
+	/* Write UI cycle count using SC5891 format */
+	rc = sc5891_write_data(chip, SC5891_DATA_ID_UI_CYCLE_COUNT, data);
+	if (rc < 0) {
+		chg_err("set ui cycle count %u failed, rc=%d", ui_cycle_count, rc);
+		return rc;
+	}
+
+	chip->battinfo.ui_cycle_count = ui_cycle_count;
+	chg_info("set ui cycle count %u succ", ui_cycle_count);
+
+	return 0;
+}
+
+static int oplus_sc5891_get_ui_soh(struct oplus_chg_ic_dev *ic_dev, u8 *ui_soh)
+{
+	struct sc5891_device *chip;
+	u8 data[1];
+	int rc;
+	int read_len = 0;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+	chip = oplus_chg_ic_get_drvdata(ic_dev);
+	if (!chip || !ui_soh)
+		return -EINVAL;
+
+	if (!chip->support_eco_design)
+		return -ENOTSUPP;
+
+	/* Read UI SOH using SC5891 format */
+	rc = sc5891_read_data(chip, SC5891_DATA_ID_UI_SOH, data, &read_len);
+	if (rc < 0) {
+		chg_err("read ui_soh failed, rc=%d\n", rc);
+		return rc;
+	}
+
+	*ui_soh = data[0];
+	return 0;
+}
+
+static int oplus_sc5891_set_ui_soh(struct oplus_chg_ic_dev *ic_dev, u8 ui_soh)
+{
+	struct sc5891_device *chip;
+	int rc = 0;
+	u8 data[1];
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+	chip = oplus_chg_ic_get_drvdata(ic_dev);
+	if (!chip)
+		return -EINVAL;
+
+	if (!chip->support_eco_design)
+		return -ENOTSUPP;
+
+	data[0] = ui_soh;
+
+	/* Write UI SOH using SC5891 format */
+	rc = sc5891_write_data(chip, SC5891_DATA_ID_UI_SOH, data);
+	if (rc < 0) {
+		chg_err("set ui soh %u failed, rc=%d", ui_soh, rc);
+		return rc;
+	}
+
+	chip->battinfo.ui_soh = ui_soh;
+	chg_info("set ui soh %u succ", ui_soh);
+
+	return 0;
+}
+
+static int oplus_sc5891_get_used_flag(struct oplus_chg_ic_dev *ic_dev, u8 *used_flag)
+{
+	struct sc5891_device *chip;
+	u8 data[1];
+	int rc;
+	int read_len = 0;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+	chip = oplus_chg_ic_get_drvdata(ic_dev);
+	if (!chip || !used_flag)
+		return -EINVAL;
+
+	if (!chip->support_eco_design)
+		return -ENOTSUPP;
+
+	/* Read used flag using SC5891 format */
+	rc = sc5891_read_data(chip, SC5891_DATA_ID_USED_FLAG, data, &read_len);
+	if (rc < 0) {
+		chg_err("read used_flag failed, rc=%d\n", rc);
+		return rc;
+	}
+
+	*used_flag = data[0];
+	return 0;
+}
+
+static int oplus_sc5891_set_used_flag(struct oplus_chg_ic_dev *ic_dev, u8 used_flag)
+{
+	struct sc5891_device *chip;
+	int rc = 0;
+	u8 data[1];
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+	chip = oplus_chg_ic_get_drvdata(ic_dev);
+	if (!chip)
+		return -EINVAL;
+
+	if (!chip->support_eco_design)
+		return -ENOTSUPP;
+
+	data[0] = used_flag;
+
+	/* Write used flag using SC5891 format */
+	rc = sc5891_write_data(chip, SC5891_DATA_ID_USED_FLAG, data);
+	if (rc < 0) {
+		chg_err("set used flag %u failed, rc=%d", used_flag, rc);
+		return rc;
+	}
+
+	chip->battinfo.used_flag = used_flag;
+	chg_info("set used flag %u succ", used_flag);
+
+	return 0;
+}
+
+static void oplus_sc5891_get_manu_battinfo_work(struct work_struct *work)
+{
+	int rc = 0;
+	u8 data[2];
+	int read_len = 0;
+	struct sc5891_device *chip = container_of(work, struct sc5891_device, get_manu_battinfo_work.work);
+
+	if (!chip->support_eco_design) {
+		chg_info("not support eco design\n");
+		return;
+	}
+
+	rc = sc5891_get_manu_date_from_sn(chip, &chip->battinfo.manu_date);
+	if (rc)
+		chg_err("get manu_date from batt_sn fail rc = %d\n", rc);
+
+	rc = sc5891_read_data(chip, SC5891_DATA_ID_FIRST_USAGE_DATE, data, &read_len);
+	if (rc)
+		chg_err("get first_usage_date fail rc = %d\n", rc);
+	else
+		chip->battinfo.first_usage_date = (data[1] << 8) | data[0];
+
+	rc = sc5891_read_data(chip, SC5891_DATA_ID_UI_CYCLE_COUNT, data, &read_len);
+	if (rc)
+		chg_err("get ui_cycle_count fail rc = %d\n", rc);
+	else
+		chip->battinfo.ui_cycle_count = (data[1] << 8) | data[0];
+
+	rc = sc5891_read_data(chip, SC5891_DATA_ID_UI_SOH, data, &read_len);
+	if (rc)
+		chg_err("get ui_soh fail rc = %d\n", rc);
+	else
+		chip->battinfo.ui_soh = data[0];
+
+	rc = sc5891_read_data(chip, SC5891_DATA_ID_USED_FLAG, data, &read_len);
+	if (rc)
+		chg_err("get used_flag fail rc = %d\n", rc);
+	else
+		chip->battinfo.used_flag = data[0];
+
+	chg_info("ECO design info: manu_date=0x%04x, first_usage_date=0x%04x, ui_cycle_count=%u, ui_soh=%u, used_flag=%u",
+			 chip->battinfo.manu_date, chip->battinfo.first_usage_date,
+			 chip->battinfo.ui_cycle_count, chip->battinfo.ui_soh, chip->battinfo.used_flag);
+}
+
 static int sc5891_enter_shutdown(struct oplus_chg_ic_dev *ic_dev, bool *valid)
 {
 	struct sc5891_device *chip;
@@ -1667,7 +2040,134 @@ static int sc5891_enter_shutdown(struct oplus_chg_ic_dev *ic_dev, bool *valid)
 	return rc;
 }
 
-static int sc5891_get_batt_auth(struct oplus_chg_ic_dev *ic_dev, bool *auth)
+/* Full SN: X* + 12-digit material + 3-char prod date (YMD) + tail; date at index 14..16 */
+#define SC5891_SN_PROD_DATE_OFF		14u
+
+static int sc5891_sn_char_to_year(unsigned char c)
+{
+	if (c >= '0' && c <= '9')
+		return 2020 + (c - '0');
+	if (c >= 'A' && c <= 'Z')
+		return 2030 + (c - 'A');
+	return -1;
+}
+
+static int sc5891_sn_char_to_month(unsigned char c)
+{
+	if (c >= '1' && c <= '9')
+		return c - '0';
+	if (c >= 'A' && c <= 'C')
+		return c - 'A' + 10;
+	return -1;
+}
+
+static int sc5891_sn_char_to_day(unsigned char c)
+{
+	if (c >= '1' && c <= '9')
+		return c - '0';
+	/* 10–31 via base-32-ish alphabet; I/O omitted (confusable with 1/0) */
+	if (c >= 'A' && c <= 'H')
+		return c - 'A' + 10;
+	if (c >= 'J' && c <= 'N')
+		return c - 'J' + 18;
+	if (c >= 'P' && c <= 'X')
+		return c - 'P' + 23;
+	return -1;
+}
+
+static int sc5891_manu_date_raw_from_full_sn(const char *sn, u16 *out)
+{
+	int year, month, day;
+
+	if (!sn || !out)
+		return -EINVAL;
+	if (strnlen(sn, FULL_BATT_SN_LEN + 1) < SC5891_SN_PROD_DATE_OFF + 3)
+		return -EINVAL;
+
+	year = sc5891_sn_char_to_year(sn[SC5891_SN_PROD_DATE_OFF]);
+	month = sc5891_sn_char_to_month(sn[SC5891_SN_PROD_DATE_OFF + 1]);
+	day = sc5891_sn_char_to_day(sn[SC5891_SN_PROD_DATE_OFF + 2]);
+
+	if (year < 1980 || year > 1980 + 127 || month < 1 || month > 12 ||
+	    day < 1 || day > 31)
+		return -EINVAL;
+
+	*out = (u16)((((year - 1980) & 0x7F) << 9) | ((month & 0xF) << 5) |
+		     (day & 0x1F));
+	return 0;
+}
+
+static int sc5891_get_manu_date_from_sn(struct sc5891_device *chip, u16 *raw_out)
+{
+	int rc;
+
+	rc = sc5891_get_batt_info_from_ic(chip);
+	if (rc < 0)
+		return rc;
+
+	return sc5891_manu_date_raw_from_full_sn(chip->full_batt_sn, raw_out);
+}
+
+static int sc5891_get_batt_info_from_ic(struct sc5891_device *chip)
+{
+	const struct sc5891_data_cfg *cfg = &sc5891_data_cfg_table[SC5891_DATA_ID_BATT_SN];
+	uint8_t *buf;
+	int rc;
+	int len;
+
+	if (chip == NULL) {
+		chg_err("chip is NULL\n");
+		return -EINVAL;
+	}
+
+	buf = kzalloc(cfg->data_len, GFP_KERNEL);
+	if (buf == NULL) {
+		chg_err("alloc page mem error\n");
+		return -ENOMEM;
+	}
+
+	rc = sc5891_read_data(chip, SC5891_DATA_ID_BATT_SN, buf, &len);
+	if (rc < 0) {
+		chg_err("fail to read batt_sn, rc = %d\n", rc);
+		kfree(buf);
+		return rc;
+	}
+
+	memmove(chip->full_batt_sn, buf, FULL_BATT_SN_LEN);
+	chip->full_batt_sn[FULL_BATT_SN_LEN] = '\0';
+	/* batt sn for authentication starts from index 2 */
+	memmove(chip->batt_info, buf + 2, BATT_SN_LEN);
+	chip->batt_info[BATT_SN_LEN] = '\0';
+	kfree(buf);
+	return 0;
+}
+
+static bool sc5891_check_batt_info(struct sc5891_device *chip)
+{
+	int i;
+	int rc;
+
+	if (chip == NULL) {
+		chg_err("chip is NULL");
+		return false;
+	}
+
+	rc = sc5891_get_batt_info_from_ic(chip);
+	if (rc < 0) {
+		chg_err("get batt_info from IC failed!\n");
+		return false;
+	}
+	chg_info("batt_info in IC: %s", chip->batt_info);
+
+	for (i = 0; i < chip->batt_info_num; ++i) {
+		if (memcmp(chip->batt_info, chip->dt_batt_info[i], BATT_SN_LEN) == 0)
+			return true;
+	}
+
+	return false;
+}
+
+static int sc5891_get_batt_hmac(struct oplus_chg_ic_dev *ic_dev, bool *hmac)
 {
 	struct sc5891_device *chip;
 
@@ -1712,6 +2212,84 @@ static int sc5891_get_prikey_index(struct oplus_chg_ic_dev *ic_dev, int *index)
 	}
 
 	*index = chip->prikey_index;
+	return 0;
+}
+
+static int sc5891_get_eco_batt_sn(struct oplus_chg_ic_dev *ic_dev, char buf[], int len)
+{
+	struct sc5891_device *chip;
+	int rc;
+
+	chip = oplus_chg_ic_get_priv_data(ic_dev);
+	if (chip == NULL) {
+		chg_err("chip is NULL");
+		return -ENODEV;
+	}
+
+	if (buf == NULL || len < OPLUS_BATT_SERIAL_NUM_SIZE)
+		return -EINVAL;
+
+	if (chip->cert_valid) {
+		memmove(buf, chip->full_batt_sn + ECO_BATT_SN_OFFSET, OPLUS_BATT_SERIAL_NUM_SIZE);
+		buf[OPLUS_BATT_SERIAL_NUM_SIZE - 1] = '\0';
+		return strnlen(buf, OPLUS_BATT_SERIAL_NUM_SIZE);
+	}
+
+	rc = sc5891_get_batt_info_from_ic(chip);
+	if (rc < 0) {
+		chg_err("get batt_info from ic failed, rc:%d", rc);
+		return rc;
+	}
+
+	memmove(buf, chip->full_batt_sn + ECO_BATT_SN_OFFSET, OPLUS_BATT_SERIAL_NUM_SIZE);
+	buf[OPLUS_BATT_SERIAL_NUM_SIZE - 1] = '\0';
+	return strnlen(buf, OPLUS_BATT_SERIAL_NUM_SIZE);
+}
+
+static int sc5891_get_sn_match(struct oplus_chg_ic_dev *ic_dev, bool *match)
+{
+	struct sc5891_device *chip;
+
+	chip = oplus_chg_ic_get_priv_data(ic_dev);
+
+	if (chip == NULL) {
+		chg_err("chip is NULL");
+		return -ENODEV;
+	}
+
+	if (!chip->sn_match)
+		chip->sn_match = sc5891_check_batt_info(chip);
+
+	*match = chip->sn_match;
+	return 0;
+}
+
+static int sc5891_get_full_batt_sn(struct oplus_chg_ic_dev *ic_dev, char buf[], int len)
+{
+	struct sc5891_device *chip;
+	int rc;
+
+	chip = oplus_chg_ic_get_priv_data(ic_dev);
+	if (chip == NULL) {
+		chg_err("chip is NULL");
+		return -ENODEV;
+	}
+
+	if (buf == NULL || len < FULL_BATT_SN_LEN)
+		return -EINVAL;
+
+	if (chip->cert_valid) {
+		memmove(buf, chip->full_batt_sn, FULL_BATT_SN_LEN);
+		return 0;
+	}
+
+	rc = sc5891_get_batt_info_from_ic(chip);
+	if (rc < 0) {
+		chg_err("get batt_info from ic failed, rc:%d", rc);
+		return rc;
+	}
+
+	memmove(buf, chip->full_batt_sn, FULL_BATT_SN_LEN);
 	return 0;
 }
 
@@ -1893,6 +2471,42 @@ static void *sc5891_ic_get_func(struct oplus_chg_ic_dev *ic_dev,
 		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_GAUGE_SEC_ECW,
 			sc5891_ecw);
 		break;
+	case OPLUS_IC_FUNC_GAUGE_GET_MANU_DATE:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_GAUGE_GET_MANU_DATE,
+					       oplus_sc5891_get_manu_date);
+		break;
+	case OPLUS_IC_FUNC_GAUGE_GET_FIRST_USAGE_DATE:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_GAUGE_GET_FIRST_USAGE_DATE,
+					       oplus_sc5891_get_first_usage_date);
+		break;
+	case OPLUS_IC_FUNC_GAUGE_SET_FIRST_USAGE_DATE:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_GAUGE_SET_FIRST_USAGE_DATE,
+					       oplus_sc5891_set_first_usage_date);
+		break;
+	case OPLUS_IC_FUNC_GAUGE_GET_UI_CC:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_GAUGE_GET_UI_CC,
+					       oplus_sc5891_get_ui_cycle_count);
+		break;
+	case OPLUS_IC_FUNC_GAUGE_SET_UI_CC:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_GAUGE_SET_UI_CC,
+					       oplus_sc5891_set_ui_cycle_count);
+		break;
+	case OPLUS_IC_FUNC_GAUGE_GET_UI_SOH:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_GAUGE_GET_UI_SOH,
+					       oplus_sc5891_get_ui_soh);
+		break;
+	case OPLUS_IC_FUNC_GAUGE_SET_UI_SOH:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_GAUGE_SET_UI_SOH,
+					       oplus_sc5891_set_ui_soh);
+		break;
+	case OPLUS_IC_FUNC_GAUGE_GET_USED_FLAG:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_GAUGE_GET_USED_FLAG,
+					       oplus_sc5891_get_used_flag);
+		break;
+	case OPLUS_IC_FUNC_GAUGE_SET_USED_FLAG:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_GAUGE_SET_USED_FLAG,
+					       oplus_sc5891_set_used_flag);
+		break;
 	case OPLUS_IC_FUNC_GAUGE_SEC_SHUTDOWN:
 		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_GAUGE_SEC_SHUTDOWN,
 			sc5891_enter_shutdown);
@@ -1935,7 +2549,11 @@ static void *sc5891_ic_get_func(struct oplus_chg_ic_dev *ic_dev,
 		break;
 	case OPLUS_IC_FUNC_GAUGE_GET_BATT_AUTH:
 		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_GAUGE_GET_BATT_AUTH,
-			sc5891_get_batt_auth);
+			sc5891_get_batt_hmac);
+		break;
+	case OPLUS_IC_FUNC_GAUGE_GET_BATT_HMAC:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_GAUGE_GET_BATT_HMAC,
+			sc5891_get_batt_hmac);
 		break;
 	case OPLUS_IC_FUNC_GAUGE_SEC_SET_PRIKEY:
 		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_GAUGE_SEC_SET_PRIKEY,
@@ -1945,6 +2563,10 @@ static void *sc5891_ic_get_func(struct oplus_chg_ic_dev *ic_dev,
 		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_GAUGE_SEC_GET_PRIKEY_INDEX,
 			sc5891_get_prikey_index);
 		break;
+	case OPLUS_IC_FUNC_GAUGE_GET_BATT_SN:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_GAUGE_GET_BATT_SN,
+			sc5891_get_eco_batt_sn);
+		break;
 	case OPLUS_IC_FUNC_GAUGE_SET_VCT:
 		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_GAUGE_SET_VCT,
 			sc5891_write_sili_vct);
@@ -1952,6 +2574,14 @@ static void *sc5891_ic_get_func(struct oplus_chg_ic_dev *ic_dev,
 	case OPLUS_IC_FUNC_GAUGE_GET_VCT:
 		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_GAUGE_GET_VCT,
 			sc5891_get_sili_vct);
+		break;
+	case OPLUS_IC_FUNC_GAUGE_GET_SN_MATCH:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_GAUGE_GET_SN_MATCH,
+			sc5891_get_sn_match);
+		break;
+	case OPLUS_IC_FUNC_GAUGE_GET_BATT_IC_SN:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_GAUGE_GET_BATT_IC_SN,
+			sc5891_get_full_batt_sn);
 		break;
 	default:
 		chg_err("this func(=%d) is not supported\n", func_id);
@@ -1967,6 +2597,38 @@ static struct oplus_chg_ic_virq sc5891_virq_table[] = {
 	{ .virq_id = OPLUS_IC_VIRQ_OFFLINE },
 	{ .virq_id = OPLUS_IC_VIRQ_RESUME },
 };
+
+static void sc5891_parse_batt_info(struct sc5891_device *chip)
+{
+	unsigned char sn_total[MAX_SN_SIZE] = {0};
+	int len;
+	int rc;
+	int i;
+
+	if (chip == NULL) {
+		chg_err("chip is NULL");
+		return;
+	}
+
+	len = of_property_count_u8_elems(chip->dev->of_node, "oplus,batt_info");
+	if (len < 0 || len > MAX_SN_SIZE) {
+		chg_info("Count oplus,batt_info failed, len = %d\n", len);
+		return;
+	}
+
+	rc = of_property_read_u8_array(chip->dev->of_node, "oplus,batt_info", sn_total, len);
+	if (rc) {
+		chg_err("Get oplus,batt_info failed %d\n", rc);
+		return;
+	}
+
+	chip->batt_info_num = len / BATT_SN_LEN;
+	for (i = 0; i < chip->batt_info_num; i++) {
+		memmove(chip->dt_batt_info[i], &sn_total[i * BATT_SN_LEN], BATT_SN_LEN);
+		chip->dt_batt_info[i][BATT_SN_LEN] = '\0';
+		chg_info("dt_batt_info_%d: %s\n", i, chip->dt_batt_info[i]);
+	}
+}
 
 static void sc5891_ic_unregister(struct sc5891_device *chip)
 {
@@ -1995,6 +2657,7 @@ static int sc5891_ic_register(struct sc5891_device *chip)
 		&chip->sc5891_fault_mitigation);
 	if (rc < 0)
 		chip->sc5891_fault_mitigation = 0;
+	sc5891_parse_batt_info(chip);
 
 	ic_cfg.name = chip->dev->of_node->name;
 	ic_cfg.index = ic_index;
@@ -2258,6 +2921,9 @@ const struct i2c_device_id *id)
 	oplus_mms_wait_topic("gauge", sc5891_subscribe_gauge_topic, chip);
 	chg_info("sc5891 probe succuessfully.\n");
 
+	chip->support_eco_design = !!(oplus_chg_get_nvid_support_flags() & BIT(ECO_DESIGN_SUPPORT_REGION));
+	INIT_DELAYED_WORK(&chip->get_manu_battinfo_work, oplus_sc5891_get_manu_battinfo_work);
+	schedule_delayed_work(&chip->get_manu_battinfo_work, 0);
 	return 0;
 
 debugfs_err:
@@ -2285,6 +2951,7 @@ static void sc5891_remove(struct i2c_client *client)
 #endif
 	if (!IS_ERR_OR_NULL(chip->gauge_subs))
 		oplus_mms_unsubscribe(chip->gauge_subs);
+	cancel_delayed_work_sync(&chip->get_manu_battinfo_work);
 	sc5891_ic_enter_shutdown(chip);
 	sc5891_debugfs_remove(chip);
 	sc5891_ic_unregister(chip);

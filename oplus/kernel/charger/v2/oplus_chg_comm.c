@@ -3601,26 +3601,6 @@ static void oplus_comm_smooth_strategy_set_online(struct oplus_chg_comm *chip)
 		(chip->wired_online || chip->wls_online));
 }
 
-int oplus_comm_smooth_strategy_rus_set_secondary_smooth_map(struct oplus_mms *topic, bool enable)
-{
-	struct oplus_chg_comm *chip = NULL;
-
-	if (topic == NULL) {
-		chg_err("topic is NULL\n");
-		return -EINVAL;
-	}
-
-	chip = oplus_mms_get_drvdata(topic);
-	if (!chip)
-		return -EINVAL;
-	if (!chip->smooth_strategy)
-		return -EINVAL;
-
-	oplus_chg_strategy_set_process_data(chip->smooth_strategy, "rus_set", enable);
-
-	return 0;
-}
-
 static void oplus_comm_smooth_strategy_update(struct oplus_chg_comm *chip)
 {
 	int smooth_soc;

@@ -265,8 +265,40 @@
                 },
                 "overwrite": false
             }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_GAUGE_GET_SN_MATCH",
+            "desc": {
+                "zh": "获取SN是否匹配"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["bool *"],
+            "parameter_desc": [
+                {
+                    "range": "0-1",
+                    "type": "out",
+                    "desc": {
+                        "zh": "0:不匹配, 1:匹配"
+                    }
+                }
+            ],
+            "vict": {
+                "read": {
+                    "cmd": "vict -f {id} -G vic-*",
+                    "desc": {
+                        "zh": "N/A"
+                    }
+                },
+                "write": false,
+                "overwrite": {
+                    "cmd": "vict -f {id} -O {val} vic-*",
+                    "desc": {
+                        "zh": "N/A"
+                    }
+                }
+            }
         }
     ],
 
-    "version": "V5.5:9:135cdb303cac914c48dec4f4d37e480e29d6cc7f239657885a126ed2c8895a74"
+    "version": "V5.6:10:749915be62b82c887bdfd4924edba65962a21004da0e4b152c13e57a6ed98cb8"
 }

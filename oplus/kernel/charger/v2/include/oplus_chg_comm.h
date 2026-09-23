@@ -38,6 +38,12 @@ enum oplus_temp_region {
 
 #define V3P6_TEMP_REGION_MAX 8
 
+enum power_role_type {
+	POWER_ROLE_UNKNOWN = -1,
+	POWER_ROLE_SINK = 0,
+	POWER_ROLE_SOURCE = 1,
+};
+
 enum oplus_ffc_temp_region {
 	FFC_TEMP_REGION_COOL,
 	FFC_TEMP_REGION_PRE_NORMAL,
@@ -188,5 +194,4 @@ void oplus_comm_set_dec_delta(struct oplus_mms *topic, int val);
 void oplus_comm_get_dec_delta(struct oplus_mms *topic, int *val);
 bool oplus_comm_get_hmac_not_pop_up(struct oplus_mms *topic);
 int oplus_comm_get_bdd_voltdiff_trend(struct oplus_mms *topic);
-int oplus_comm_smooth_strategy_rus_set_secondary_smooth_map(struct oplus_mms *topic, bool enable);
 #endif /* __OPLUS_CHG_COMM_H__ */

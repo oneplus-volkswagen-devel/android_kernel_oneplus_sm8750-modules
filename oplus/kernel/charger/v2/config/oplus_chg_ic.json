@@ -238,6 +238,30 @@
                         "zh": "虚拟电平转换芯片"
                     },
                     "str": "virtual level_shift"
+                },
+                {
+                    "lable": "OPLUS_CHG_IC_REVERSE",
+                    "desc": {
+                        "en": "REVERSE",
+                        "zh": "反向充电协议栈"
+                    },
+                    "str": "reverse"
+                },
+                {
+                    "lable": "OPLUS_CHG_IC_VIRTUAL_REVERSE",
+                    "desc": {
+                        "en": "virtual reverse",
+                        "zh": "虚拟反向充电协议栈"
+                    },
+                    "str": "virtual_reverse"
+                },
+                {
+                    "lable": "OPLUS_CHG_IC_VIRTUAL_BOOST",
+                    "desc": {
+                        "en": "virtual boost",
+                        "zh": "虚拟放电抬压芯片"
+                    },
+                    "str": "dischg_boost"
                 }
             ]
         },

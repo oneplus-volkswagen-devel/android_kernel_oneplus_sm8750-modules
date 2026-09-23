@@ -35,6 +35,7 @@
 #include <oplus_batt_bal.h>
 #include "monitor/oplus_chg_track.h"
 #include <oplus_chg_plc.h>
+#include <oplus_dischg_boost.h>
 #include <linux/completion.h>
 #include <linux/mutex.h>
 #include <oplus_sec.h>
@@ -75,6 +76,7 @@ struct oplus_configfs_device {
 	struct oplus_mms *batt_bal_topic;
 	struct oplus_mms *retention_topic;
 	struct oplus_mms *plc_topic;
+	struct oplus_mms *dischg_boost_topic;
 	struct mms_subscribe *ufcs_subs;
 	struct mms_subscribe *pps_subs;
 	struct mms_subscribe *plc_subs;
@@ -265,6 +267,14 @@ static bool is_batt_bal_topic_available(struct oplus_configfs_device *chip)
 		chip->batt_bal_topic = oplus_mms_get_by_name("batt_bal");
 
 	return !!chip->batt_bal_topic;
+}
+
+static bool is_dischg_boost_topic_available(struct oplus_configfs_device *chip)
+{
+	if (!chip->dischg_boost_topic)
+		chip->dischg_boost_topic = oplus_mms_get_by_name("dischg_boost");
+
+	return !!chip->dischg_boost_topic;
 }
 
 static bool is_plc_force_buck_votable_available(struct oplus_configfs_device *chip)
@@ -4420,29 +4430,99 @@ static ssize_t byb_vout_store(struct device *dev, struct device_attribute *attr,
 }
 static DEVICE_ATTR_RW(byb_vout);
 
-static ssize_t update_secondary_smooth_map_store(struct device *dev,
-						 struct device_attribute *attr,
-						 const char *buf, size_t count)
+static ssize_t boost_cv_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct oplus_configfs_device *chip = dev->driver_data;
-	int val;
-	int rc;
+	int cv_mv = 0;
 
-	if (!chip || !is_comm_topic_available(chip))
+	if (!chip) {
+		chg_err("chip is NULL\n");
 		return -EINVAL;
-	if (kstrtos32(buf, 0, &val))
-		return -EINVAL;
-	if (val != 0 && val != 1)
-		return -EINVAL;
+	}
 
-	rc = oplus_comm_smooth_strategy_rus_set_secondary_smooth_map(
-		chip->comm_topic, !!val);
-	if (rc < 0)
-		return rc;
+	if (!(is_dischg_boost_topic_available(chip))) {
+		chg_err("dischg_boost_topic is NULL\n");
+		return -ENODEV;
+	}
+
+	cv_mv = oplus_boost_cv_mv_show(chip->dischg_boost_topic);
+	if (cv_mv < 0)
+		return cv_mv;
+
+	return sprintf(buf, "%d\n", cv_mv);
+}
+
+static ssize_t boost_cv_store(struct device *dev, struct device_attribute *attr,
+					const char *buf, size_t count)
+{
+	struct oplus_configfs_device *chip = dev->driver_data;
+	int val = 0;
+
+	if (!chip) {
+		chg_err("chip is NULL\n");
+		return -EINVAL;
+	}
+
+	if (!is_dischg_boost_topic_available(chip)) {
+		chg_err("dischg_boost_topic is NULL\n");
+		return -ENODEV;
+	}
+
+	if (kstrtos32(buf, 0, &val)) {
+		chg_err("buf error\n");
+		return -EINVAL;
+	}
+
+	oplus_boost_cv_mv_store(chip->dischg_boost_topic, val);
 
 	return count;
 }
-static DEVICE_ATTR_WO(update_secondary_smooth_map);
+static DEVICE_ATTR_RW(boost_cv);
+
+static ssize_t vbat_pwr_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct oplus_configfs_device *chip = dev->driver_data;
+	int vbat_pwr = 0;
+
+	if (!chip) {
+		chg_err("chip is NULL\n");
+		return -EINVAL;
+	}
+
+	vbat_pwr = oplus_wired_get_vbat_pwr();
+	if (vbat_pwr < 0)
+		return vbat_pwr;
+
+	return sprintf(buf, "%d\n", vbat_pwr);
+}
+static DEVICE_ATTR_RO(vbat_pwr);
+
+static ssize_t boost_disable_auto_mode_store(struct device *dev, struct device_attribute *attr,
+					const char *buf, size_t count)
+{
+	struct oplus_configfs_device *chip = dev->driver_data;
+	int val = 0;
+
+	if (!chip) {
+		chg_err("chip is NULL\n");
+		return -EINVAL;
+	}
+
+	if (!is_dischg_boost_topic_available(chip)) {
+		chg_err("dischg_boost_topic is NULL\n");
+		return -ENODEV;
+	}
+
+	if (kstrtos32(buf, 0, &val)) {
+		chg_err("buf error\n");
+		return -EINVAL;
+	}
+
+	oplus_boost_disable_auto_mode_store(chip->dischg_boost_topic, val);
+
+	return count;
+}
+static DEVICE_ATTR_WO(boost_disable_auto_mode);
 
 static struct device_attribute *oplus_common_attributes[] = {
 	&dev_attr_common,
@@ -4470,7 +4550,9 @@ static struct device_attribute *oplus_common_attributes[] = {
 	&dev_attr_lpd_config,
 	&dev_attr_byb_status,
 	&dev_attr_byb_vout,
-	&dev_attr_update_secondary_smooth_map,
+	&dev_attr_boost_cv,
+	&dev_attr_vbat_pwr,
+	&dev_attr_boost_disable_auto_mode,
 	NULL
 };
 
