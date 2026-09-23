@@ -2989,6 +2989,30 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 		ts->sensitive_level_used_array = (u32 *)&(ts->sensitive_level_array);
 	}
 
+	rc = of_property_read_u32_array(np, "touchpanel,click-sensitive-level", temp_array, CLICK_SENSITIVE_LEVEL_NUM);
+	if (rc) {
+		TP_BOOT_INFO(ts->tp_index, "click_sensitive_level_array not specified %d\n", rc);
+	} else {
+		ts->click_sensitive_level_array_support = true;
+		for (i=0; i < CLICK_SENSITIVE_LEVEL_NUM; i++) {
+			ts->click_sensitive_level_array[i] = temp_array[i];
+		}
+		ts->click_sensitive_level_used_array = (u32 *)&(ts->click_sensitive_level_array);
+	}
+
+	rc = of_property_read_u32_array(np, "touchpanel,long_strip_abnormal_detect_thd", temp_array, 4);
+	if (rc) {
+		ts->long_strip_abnormal_detect.channels_max_thd = 1;
+		ts->long_strip_abnormal_detect.er_max = 4;
+		ts->long_strip_abnormal_detect.er_min = 3;
+		ts->long_strip_abnormal_detect.center_width = 500;
+	} else {
+		ts->long_strip_abnormal_detect.channels_max_thd = temp_array[0];
+		ts->long_strip_abnormal_detect.er_max = temp_array[1];
+		ts->long_strip_abnormal_detect.er_min = temp_array[2];
+		ts->long_strip_abnormal_detect.center_width = temp_array[3];
+	}
+
 	rc = of_property_read_u32_array(np, "touchpanel,game_perf_para_default", temp_array, 2);
 
 	if (rc < 0) {
